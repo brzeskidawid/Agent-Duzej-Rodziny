@@ -342,7 +342,11 @@
     const okChild = cid => !S.calChild || cid === S.calChild;
     const okKind = k => !S.calKind || k === S.calKind;
     for (const e of S.events) { const k = calKindOf(e.title, ''); if (okChild(e.child_id) && okKind(k)) push(dateKey(e.starts_at), { kind: 'event', ck: k, when: new Date(e.starts_at), e }); }
-    for (const i of S.items) if (i.kind === 'message' && i.occurred_at && TEST_RE.test(i.title) && okChild(i.child_id) && okKind('test')) push(dateKey(i.occurred_at), { kind: 'item', ck: 'test', when: new Date(i.occurred_at), i });
+    for (const i of S.items) if (i.kind === 'message' && i.occurred_at && TEST_RE.test(i.title) && okChild(i.child_id) && okKind('test')) {
+      const kw = (i.title.match(TEST_RE) || [''])[0].toLowerCase().slice(0, 5);
+      const dup = S.events.some(e => e.child_id === i.child_id && dateKey(e.starts_at) === dateKey(i.occurred_at) && e.title.toLowerCase().includes(kw));
+      if (!dup) push(dateKey(i.occurred_at), { kind: 'item', ck: 'test', when: new Date(i.occurred_at), i });
+    }
     let h = '<div class="month">' + ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'].map(d => `<div class="dow">${d}</div>`).join('');
     for (let i = 0; i < 42; i++) {
       const d = addDays(gridStart, i); const k = dateKey(d);
