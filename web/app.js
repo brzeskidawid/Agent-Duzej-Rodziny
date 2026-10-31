@@ -79,6 +79,9 @@
     return m ? `<span class="chip"><span class="dot" style="background:${m.color}"></span>${esc(m.display_name)}</span>` : '<span class="chip">nieprzypisane</span>';
   }
   const isAssigned = t => !!t.assignee || !!t.child_assignee;
+  function itemForEvent(e) { return e.item_id ? S.items.find(i => i.id === e.item_id) : S.items.find(i => i.source === e.source && i.external_id === e.external_id); }
+  function taskForEvent(e) { const i = itemForEvent(e); return i ? S.tasks.find(t => t.item_id === i.id) : null; }
+  function goToTask(id) { S.openId = id; setView('tasks'); setTimeout(() => { const el = document.querySelector(`[data-task="${id}"]`); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 50); }
   function mentionsMe(c) { return c.author !== S.me.user_id && new RegExp('@' + S.me.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(c.body); }
   function unreadMentions() { return S.comments.filter(c => mentionsMe(c) && !S.commentReads.has(c.id)); }
   function taskUnreadMentions(taskId) { return unreadMentions().filter(c => c.task_id === taskId).length; }
@@ -292,8 +295,9 @@
     const in7 = addDays(todayStart, 7);
     const myTasks = S.tasks.filter(t => t.status !== 'done' && (t.assignee === S.me.user_id || !isAssigned(t)));
     const overdue = myTasks.filter(t => t.due_at && new Date(t.due_at) < todayStart);
-    const dueSoon = myTasks.filter(t => !t.due_at || (new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7));
-    const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7);
+    const weekTasks = S.tasks.filter(t => t.status !== 'done' && t.due_at && new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7);
+    const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7 && !taskForEvent(e));
+    const noDateMine = myTasks.filter(t => !t.due_at);
     const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i)).slice(0, 8);
     const greeting = now.getHours() < 12 ? 'Dzień dobry' : now.getHours() < 18 ? 'Cześć' : 'Dobry wieczór';
 
@@ -306,11 +310,10 @@
     h += `<div class="section-title">Najbliższe 7 dni</div>`;
     const merged = [
       ...events.map(e => ({ when: new Date(e.starts_at), html: eventCard(e) })),
-      ...dueSoon.filter(t => t.due_at).map(t => ({ when: new Date(t.due_at), html: taskCard(t) })),
+      ...weekTasks.map(t => ({ when: new Date(t.due_at), html: taskCard(t) })),
     ].sort((a, b) => a.when - b.when);
     h += merged.length ? groupByDay(merged) : `<div class="empty">Nic zaplanowanego. Spokojny tydzień 🙂</div>`;
-    const noDate = dueSoon.filter(t => !t.due_at);
-    if (noDate.length) h += `<div class="section-title">Zadania bez terminu</div>` + noDate.map(taskCard).join('');
+    if (noDateMine.length) h += `<div class="section-title">Moje zadania bez terminu</div>` + noDateMine.map(taskCard).join('');
     if (unread.length) h += `<div class="section-title">Nieprzeczytane wpisy</div>` + unread.map(itemCard).join('');
     $('#today-content').innerHTML = h;
     wireCards($('#today-content'));
@@ -356,11 +359,11 @@
       const max = 4;
       h += `<div class="${cls}" data-day="${k}"><div class="dn">${d.getDate()}</div>` + list.slice(0, max).map(x => {
         const obj = x.kind === 'item' ? x.i : x.e; const c = child(obj.child_id); const isTest = x.ck === 'test';
-        const label = (isTest ? '✎ ' : x.ck === 'homework' ? '📚 ' : '') + obj.title.replace(/^[^:·]*·\s*/, '');
+        const label = (isTest ? '❗' : x.ck === 'homework' ? '📚 ' : '') + obj.title.replace(/^[^:·]*·\s*/, '');
         return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${esc(label)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
     }
-    h += '</div><div class="cal-legend"><span>✎ sprawdzian / kartkówka / dyktando (pogrubione, z jasną ramką)</span><span>📚 zadanie domowe</span><span>kolor = dziecko</span></div>';
+    h += '</div><div class="cal-legend"><span>❗ sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>kolor = dziecko</span></div>';
     $('#calendar-content').innerHTML = h;
     $('#calendar-content').onclick = e => { const d = e.target.closest('[data-day]'); if (!d) return; S.calSel = d.dataset.day; render(); };
     $('#cal-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.calChild = b.dataset.child; render(); };
@@ -523,7 +526,7 @@
       <button class="check ${t.status === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="Oznacz jako zrobione">${t.status === 'done' ? '✓' : ''}</button>
       <div class="grow clickable" data-act="edit-task">
         <div class="title">${esc(t.title)}</div>
-        <div class="meta">${doing && !board ? '<span class="chip doing">W toku</span>' : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
+        <div class="meta">${!board ? (doing ? '<span class="chip doing">W toku</span>' : t.status === 'done' ? '<span class="chip" style="color:var(--ok);font-weight:600">✓ Zrobione</span>' : '<span class="chip">Do zrobienia</span>') : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
       </div>
       ${board ? moves : (t.status === 'done' ? '' : `<div class="actions"><button class="btn sm" data-act="cycle" title="Zmień status">${doing ? '↩ do zrobienia' : '▶ w toku'}</button></div>`)}</div>`;
@@ -538,7 +541,7 @@
         <div class="meta">${childChip(e.child_id)}<span>📅 ${fmtDate(e.starts_at)} · ${time}</span>${e.source !== 'manual' ? `<span>${SOURCE_LABEL[e.source] || e.source}</span>` : ''}</div>
         ${e.notes ? `<div class="body">${esc(e.notes)}</div>` : ''}
       </div>
-      <div class="actions"><button class="btn sm" data-act="event-to-task">→ zadanie</button></div></div>`;
+      <div class="actions">${taskForEvent(e) ? `<button class="btn sm" data-act="goto-task" data-task-id="${taskForEvent(e).id}">↗ zadanie</button>` : `<button class="btn sm" data-act="event-to-task">→ zadanie</button>`}</div></div>`;
   }
 
   function itemCard(i) {
@@ -549,7 +552,7 @@
         <div class="title">${unread ? '● ' : ''}${esc(i.title)}</div>
         <div class="meta">${childChip(i.child_id)}<span>${KIND_LABEL[i.kind] || i.kind} · ${SOURCE_LABEL[i.source] || i.source}</span>${i.sender ? `<span>od: ${esc(i.sender)}</span>` : ''}<span>${fmtDateTime(i.published_at)}</span>${i.occurred_at ? `<span>⏰ ${fmtDate(i.occurred_at)}</span>` : ''}</div>
       </div>
-      <div class="actions"><button class="btn sm" data-act="item-to-task">→ zadanie</button></div></div>`;
+      <div class="actions">${S.tasks.some(t => t.item_id === i.id) ? `<button class="btn sm" data-act="goto-task" data-task-id="${S.tasks.find(t => t.item_id === i.id).id}">↗ zadanie</button>` : `<button class="btn sm" data-act="item-to-task">→ zadanie</button>`}</div></div>`;
   }
 
   function wireCards(root) {
@@ -560,6 +563,7 @@
       const act = btn.dataset.act;
       const card = btn.closest('.card');
       if (act === 'settings') return openSettings();
+      if (act === 'goto-task') return goToTask(btn.dataset.taskId);
       if (act === 'add-event') return openEventForm({ starts_at: new Date(btn.dataset.day + 'T12:00:00').toISOString() });
       if (act === 'add-task') return openTaskForm({ status: btn.dataset.status, assignee: btn.dataset.backlog ? null : undefined });
       if (act === 'toggle') return toggleTask(card.dataset.task);
