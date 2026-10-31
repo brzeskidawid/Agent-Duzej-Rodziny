@@ -153,9 +153,10 @@ form textarea{min-height:80px;resize:vertical}
 .check.doing{border-color:var(--warn);border-style:dashed}
 
 /* ---------- kanban ---------- */
-.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(280px,1fr);gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px;margin:0 -16px;padding-left:16px;padding-right:16px}
+#views:has(.view[data-view=tasks]:not(.hidden)){max-width:none}
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(300px,1fr);gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px;margin:0 -16px;padding-left:16px;padding-right:16px}
 @media(min-width:900px){.board{grid-auto-columns:1fr;overflow:visible;margin:0;padding:0}}
-.col{scroll-snap-align:start;background:color-mix(in srgb,var(--card),var(--bg) 50%);border:1px solid var(--line);border-radius:var(--radius);padding:10px;min-height:200px;display:flex;flex-direction:column;gap:8px;transition:background .15s}
+.col{scroll-snap-align:start;background:color-mix(in srgb,var(--card),var(--bg) 50%);border:1px solid var(--line);border-radius:var(--radius);padding:12px;min-height:min(62vh,720px);display:flex;flex-direction:column;gap:10px;transition:background .15s}
 .col.drop{background:color-mix(in srgb,var(--line),var(--ink) 8%);border-style:dashed}
 .col-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 6px;font-weight:650}
 .col-head .n{font-size:.75rem;color:var(--muted);background:var(--line);border-radius:999px;padding:2px 8px}
@@ -170,3 +171,12 @@ form textarea{min-height:80px;resize:vertical}
 .col-add{border:1px dashed var(--line);background:transparent;border-radius:10px;padding:8px;color:var(--muted);cursor:pointer;text-align:left}
 .col-add:hover{border-color:var(--muted);color:var(--ink)}
 .col-empty{color:var(--muted);font-size:.85rem;text-align:center;padding:14px 4px}
+
+/* ---------- backlog ---------- */
+.backlog{margin-top:22px;padding-top:16px;border-top:2px dashed var(--line)}
+.backlog-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-weight:650;color:var(--muted)}
+.backlog-head .n{font-size:.75rem;background:var(--line);border-radius:999px;padding:2px 8px}
+.backlog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.backlog .card{margin:0}
+.backlog .card{flex-wrap:wrap}
+.backlog .card .actions{flex-basis:100%;flex-direction:row;justify-content:flex-end;gap:6px;padding-left:34px}

@@ -325,14 +325,14 @@
   const STATUS_COLS = [['todo', 'Do zrobienia'], ['doing', 'W toku'], ['done', 'Zrobione']];
   function renderTasks() {
     const f = S.taskFilter; const p = partner();
-    let list = S.tasks;
-    if (f === 'mine') list = list.filter(t => t.assignee === S.me.user_id);
-    if (f === 'partner') list = list.filter(t => p && t.assignee === p.user_id);
-    if (f === 'none') list = list.filter(t => !t.assignee);
     const byDue = (a, b) => (a.due_at ? new Date(a.due_at) : Infinity) - (b.due_at ? new Date(b.due_at) : Infinity) || new Date(a.created_at) - new Date(b.created_at);
+    // tablica: tylko zadania z przypisaną osobą; backlog: bez osoby
+    let board = S.tasks.filter(t => t.assignee);
+    if (f === 'mine') board = board.filter(t => t.assignee === S.me.user_id);
+    if (f === 'partner') board = board.filter(t => p && t.assignee === p.user_id);
     let h = '';
     for (const [st, label] of STATUS_COLS) {
-      let col = list.filter(t => t.status === st);
+      let col = board.filter(t => t.status === st);
       col = st === 'done' ? col.sort((a, b) => new Date(b.done_at || 0) - new Date(a.done_at || 0)).slice(0, 30) : col.sort(byDue);
       h += `<div class="col" data-status="${st}"><div class="col-head"><span>${label}</span><span class="n">${col.length}</span></div>`
         + (col.length ? col.map(t => taskCard(t, true)).join('') : `<div class="col-empty">${st === 'done' ? 'Jeszcze nic' : 'Pusto'}</div>`)
@@ -343,6 +343,13 @@
     root.innerHTML = h;
     wireCards(root);
     wireDragDrop(root);
+
+    const backlog = S.tasks.filter(t => !t.assignee && t.status !== 'done').sort(byDue);
+    const bl = $('#tasks-backlog');
+    bl.innerHTML = `<div class="backlog-head"><span>Backlog — bez przypisanej osoby</span><span class="n">${backlog.length}</span></div>`
+      + (backlog.length ? `<div class="backlog-grid">${backlog.map(t => taskCard(t, 'backlog')).join('')}</div>` : `<div class="col-empty">Backlog pusty. Zadanie bez osoby („Kto robi: nieprzypisane”) trafia tutaj.</div>`)
+      + `<button class="col-add" data-act="add-task" data-status="todo" data-backlog="1" style="margin-top:10px">+ Dodaj do backlogu</button>`;
+    wireCards(bl);
   }
 
   function wireDragDrop(root) {
@@ -445,7 +452,7 @@
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const over = t.status !== 'done' && due && due < todayStart;
     const doing = t.status === 'doing';
-    const moves = board ? `<div class="actions">${t.status !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${t.status !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${t.status === 'done' ? '← ' : ''}w toku${t.status === 'todo' ? ' →' : ''}</button>` : ''}${t.status !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
+    const moves = board === 'backlog' ? `<div class="actions"><button class="btn sm" data-act="claim" data-who="${S.me.user_id}">👤 biorę</button>${partner() ? `<button class="btn sm" data-act="claim" data-who="${partner().user_id}">→ ${esc(partner().display_name)}</button>` : ''}</div>` : board ? `<div class="actions">${t.status !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${t.status !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${t.status === 'done' ? '← ' : ''}w toku${t.status === 'todo' ? ' →' : ''}</button>` : ''}${t.status !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
     return `<div class="card ${t.status === 'done' ? 'done' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
       <button class="check ${t.status === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="Oznacz jako zrobione">${t.status === 'done' ? '✓' : ''}</button>
       <div class="grow clickable" data-act="edit-task">
@@ -487,10 +494,11 @@
       const act = btn.dataset.act;
       const card = btn.closest('.card');
       if (act === 'settings') return openSettings();
-      if (act === 'add-task') return openTaskForm({ status: btn.dataset.status });
+      if (act === 'add-task') return openTaskForm({ status: btn.dataset.status, assignee: btn.dataset.backlog ? null : undefined });
       if (act === 'toggle') return toggleTask(card.dataset.task);
       if (act === 'move') return setTaskStatus(card.dataset.task, btn.dataset.to);
-      if (act === 'add-task') return openTaskForm({ status: btn.dataset.status });
+      if (act === 'claim') return assignTask(card.dataset.task, btn.dataset.who);
+      if (act === 'add-task') return openTaskForm({ status: btn.dataset.status, assignee: btn.dataset.backlog ? null : undefined });
       if (act === 'cycle') return setTaskStatus(card.dataset.task, S.tasks.find(t => t.id === card.dataset.task).status === 'doing' ? 'todo' : 'doing');
       if (act === 'edit-task') return openTaskForm(S.tasks.find(t => t.id === card.dataset.task));
       if (act === 'edit-event') return openEventForm(S.events.find(x => x.id === card.dataset.event));
@@ -506,6 +514,13 @@
     const done = t.status !== 'done';
     t.status = done ? 'done' : 'todo'; t.done_at = done ? new Date().toISOString() : null; render();
     const { error } = await sb.from('tasks').update({ status: t.status, done_at: t.done_at }).eq('id', id);
+    if (error) fail(error);
+  }
+
+  async function assignTask(id, who) {
+    const t = S.tasks.find(x => x.id === id);
+    t.assignee = who; render();
+    const { error } = await sb.from('tasks').update({ assignee: who }).eq('id', id);
     if (error) fail(error);
   }
 
@@ -576,7 +591,7 @@
         <label>Tytuł<input name="title" required value="${esc(t.title || '')}"></label>
         <div class="row">
           <label>Dziecko<select name="child_id">${childOptions(t.child_id)}</select></label>
-          <label>Kto robi<select name="assignee">${memberOptions(t.assignee ?? (isNew ? S.me.user_id : null))}</select></label>
+          <label>Kto robi<select name="assignee">${memberOptions('assignee' in t && t.assignee !== undefined ? t.assignee : (isNew ? S.me.user_id : null))}</select></label>
         </div>
         <div class="row">
           <label>Termin<input type="date" name="due" value="${t.due_at ? dateKey(t.due_at) : ''}"></label>
