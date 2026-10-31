@@ -199,7 +199,8 @@ form textarea{min-height:80px;resize:vertical}
 .month .day.today .dn{color:#0ea5e9}
 .month .pill{font-size:.72rem;line-height:1.25;padding:3px 6px;border-radius:5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
 .month .pill.test{font-weight:700}
-.month .pill .pi{font-size:.9em;margin-right:2px}
+.pi{display:inline-block;background:#fff;color:#dc2626;font-weight:900;font-size:.85em;line-height:1.25;padding:0 5px;border-radius:4px;margin-right:4px;vertical-align:baseline;box-shadow:0 0 0 1px rgba(0,0,0,.08)}
+.month .pill .pi{margin-right:4px}
 .month .pill.task{background:transparent !important;color:var(--ink);border:1px dashed var(--muted)}
 .month .more{font-size:.66rem;color:var(--muted);padding-left:3px}
 @media(max-width:639px){
@@ -207,6 +208,7 @@ form textarea{min-height:80px;resize:vertical}
   .month .day{min-height:72px;padding:3px}
   .month .pill{font-size:0;height:9px;width:100%;padding:0;border-radius:3px}
   .month .pill.test{height:11px;background:var(--danger) !important}
+  .month .pill .pi{display:none}
   .month .more{font-size:.6rem}
 }
 .day-detail{margin-top:14px}
