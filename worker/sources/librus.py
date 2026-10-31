@@ -34,19 +34,39 @@ GRADES_DAYS = 60          # oceny starsze niż tyle dni pomijamy (żeby nie zala
 LIBRUS_URL = "https://synergia.librus.pl"
 
 
-def _dt(s: str | None, default_hour: int = 12) -> datetime | None:
-    """Librus zwraca '2026-09-05 14:22:11' albo '2026-09-05'."""
-    if not s:
+_unparsed_dates: set[str] = set()
+
+
+def _dt(s, default_hour: int = 12) -> datetime | None:
+    """Librus zwraca daty w kilku formatach: '2026-09-05 14:22:11', '2026-09-05',
+    ISO z 'T' i strefą, albo znacznik czasu (sekundy). Obsługujemy wszystkie."""
+    if s is None or s == "":
         return None
-    s = s.strip()
+    if isinstance(s, (int, float)) or (isinstance(s, str) and s.strip().isdigit()):
+        try:
+            v = float(s)
+            if v > 1e12:  # milisekundy
+                v /= 1000
+            return datetime.fromtimestamp(v).astimezone()
+        except (ValueError, OverflowError, OSError):
+            return None
+    s = str(s).strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             d = datetime.strptime(s, fmt)
             if fmt == "%Y-%m-%d":
                 d = d.replace(hour=default_hour)
-            return d.astimezone()  # lokalna strefa komputera
+            return d.astimezone()
         except ValueError:
             continue
+    try:
+        d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return d.astimezone() if d.tzinfo else d.astimezone()
+    except ValueError:
+        pass
+    if s not in _unparsed_dates:
+        _unparsed_dates.add(s)
+        log.warning("Librus: nieznany format daty %r — zgłoś to, wpis dostanie datę pobrania", s)
     return None
 
 
