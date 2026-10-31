@@ -65,10 +65,12 @@
     const c = child(id);
     return c ? `<span class="chip"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : '';
   }
-  function memberChip(id) {
+  function memberChip(id, childAssignee = false) {
+    if (childAssignee) return '<span class="chip"><span class="dot" style="background:#8b5cf6"></span>Dziecko</span>';
     const m = member(id);
     return m ? `<span class="chip"><span class="dot" style="background:${m.color}"></span>${esc(m.display_name)}</span>` : '<span class="chip">nieprzypisane</span>';
   }
+  const isAssigned = t => !!t.assignee || !!t.child_assignee;
 
   // -------------------------------------------------------------- auth
   async function boot() {
@@ -269,7 +271,7 @@
   function renderToday() {
     const now = new Date(); const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
     const in7 = addDays(todayStart, 7);
-    const myTasks = S.tasks.filter(t => t.status !== 'done' && (t.assignee === S.me.user_id || !t.assignee));
+    const myTasks = S.tasks.filter(t => t.status !== 'done' && (t.assignee === S.me.user_id || !isAssigned(t)));
     const overdue = myTasks.filter(t => t.due_at && new Date(t.due_at) < todayStart);
     const dueSoon = myTasks.filter(t => !t.due_at || (new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7));
     const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7);
@@ -327,9 +329,10 @@
     const f = S.taskFilter; const p = partner();
     const byDue = (a, b) => (a.due_at ? new Date(a.due_at) : Infinity) - (b.due_at ? new Date(b.due_at) : Infinity) || new Date(a.created_at) - new Date(b.created_at);
     // tablica: tylko zadania z przypisaną osobą; backlog: bez osoby
-    let board = S.tasks.filter(t => t.assignee);
+    let board = S.tasks.filter(isAssigned);
     if (f === 'mine') board = board.filter(t => t.assignee === S.me.user_id);
     if (f === 'partner') board = board.filter(t => p && t.assignee === p.user_id);
+    if (f === 'child') board = board.filter(t => t.child_assignee);
     let h = '';
     for (const [st, label] of STATUS_COLS) {
       let col = board.filter(t => t.status === st);
@@ -344,11 +347,11 @@
     wireCards(root);
     wireDragDrop(root);
 
-    const backlog = S.tasks.filter(t => !t.assignee && t.status !== 'done').sort(byDue);
+    const backlog = S.tasks.filter(t => !isAssigned(t) && t.status !== 'done').sort(byDue);
     const bl = $('#tasks-backlog');
-    bl.innerHTML = `<div class="backlog-head"><span>Backlog — bez przypisanej osoby</span><span class="n">${backlog.length}</span></div>`
-      + (backlog.length ? `<div class="backlog-grid">${backlog.map(t => taskCard(t, 'backlog')).join('')}</div>` : `<div class="col-empty">Backlog pusty. Zadanie bez osoby („Kto robi: nieprzypisane”) trafia tutaj.</div>`)
-      + `<button class="col-add" data-act="add-task" data-status="todo" data-backlog="1" style="margin-top:10px">+ Dodaj do backlogu</button>`;
+    bl.innerHTML = `<div class="backlog-head"><span>Nieprzypisane zadania</span><span class="n">${backlog.length}</span></div>`
+      + (backlog.length ? `<div class="backlog-grid">${backlog.map(t => taskCard(t, 'backlog')).join('')}</div>` : `<div class="col-empty">Pusto. Trafiają tu zadania bez osoby — także te tworzone automatycznie z wpisów z terminem.</div>`)
+      + `<button class="col-add" data-act="add-task" data-status="todo" data-backlog="1" style="margin-top:10px">+ Dodaj zadanie</button>`;
     wireCards(bl);
   }
 
@@ -452,12 +455,12 @@
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const over = t.status !== 'done' && due && due < todayStart;
     const doing = t.status === 'doing';
-    const moves = board === 'backlog' ? `<div class="actions"><button class="btn sm" data-act="claim" data-who="${S.me.user_id}">👤 biorę</button>${partner() ? `<button class="btn sm" data-act="claim" data-who="${partner().user_id}">→ ${esc(partner().display_name)}</button>` : ''}</div>` : board ? `<div class="actions">${t.status !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${t.status !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${t.status === 'done' ? '← ' : ''}w toku${t.status === 'todo' ? ' →' : ''}</button>` : ''}${t.status !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
+    const moves = board === 'backlog' ? `<div class="actions"><button class="btn sm" data-act="claim" data-who="${S.me.user_id}">👤 biorę</button>${partner() ? `<button class="btn sm" data-act="claim" data-who="${partner().user_id}">→ ${esc(partner().display_name)}</button>` : ''}<button class="btn sm" data-act="claim" data-who="child">→ Dziecko</button></div>` : board ? `<div class="actions">${t.status !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${t.status !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${t.status === 'done' ? '← ' : ''}w toku${t.status === 'todo' ? ' →' : ''}</button>` : ''}${t.status !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
     return `<div class="card ${t.status === 'done' ? 'done' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
       <button class="check ${t.status === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="Oznacz jako zrobione">${t.status === 'done' ? '✓' : ''}</button>
       <div class="grow clickable" data-act="edit-task">
         <div class="title">${esc(t.title)}</div>
-        <div class="meta">${doing && !board ? '<span class="chip doing">W toku</span>' : ''}${childChip(t.child_id)}${memberChip(t.assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}</div>
+        <div class="meta">${doing && !board ? '<span class="chip doing">W toku</span>' : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
       </div>
       ${board ? moves : (t.status === 'done' ? '' : `<div class="actions"><button class="btn sm" data-act="cycle" title="Zmień status">${doing ? '↩ do zrobienia' : '▶ w toku'}</button></div>`)}</div>`;
@@ -519,8 +522,9 @@
 
   async function assignTask(id, who) {
     const t = S.tasks.find(x => x.id === id);
-    t.assignee = who; render();
-    const { error } = await sb.from('tasks').update({ assignee: who }).eq('id', id);
+    const patch = who === 'child' ? { assignee: null, child_assignee: true } : { assignee: who, child_assignee: false };
+    Object.assign(t, patch); render();
+    const { error } = await sb.from('tasks').update(patch).eq('id', id);
     if (error) fail(error);
   }
 
@@ -570,7 +574,7 @@
 
   // -------------------------------------------------------------- forms
   function childOptions(sel) { return `<option value="">— brak —</option>` + S.children.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join(''); }
-  function memberOptions(sel) { return `<option value="">— nieprzypisane —</option>` + S.members.map(m => `<option value="${m.user_id}" ${m.user_id === sel ? 'selected' : ''}>${esc(m.display_name)}</option>`).join(''); }
+  function memberOptions(sel) { return `<option value="">— nieprzypisane —</option>` + S.members.map(m => `<option value="${m.user_id}" ${m.user_id === sel ? 'selected' : ''}>${esc(m.display_name)}</option>`).join('') + `<option value="child" ${sel === 'child' ? 'selected' : ''}>Dziecko</option>`; }
 
   function openAddMenu() {
     openModal('Dodaj', `
@@ -591,7 +595,7 @@
         <label>Tytuł<input name="title" required value="${esc(t.title || '')}"></label>
         <div class="row">
           <label>Dziecko<select name="child_id">${childOptions(t.child_id)}</select></label>
-          <label>Kto robi<select name="assignee">${memberOptions('assignee' in t && t.assignee !== undefined ? t.assignee : (isNew ? S.me.user_id : null))}</select></label>
+          <label>Kto robi<select name="assignee">${memberOptions(t.child_assignee ? 'child' : ('assignee' in t && t.assignee !== undefined ? t.assignee : (isNew ? S.me.user_id : null)))}</select></label>
         </div>
         <div class="row">
           <label>Termin<input type="date" name="due" value="${t.due_at ? dateKey(t.due_at) : ''}"></label>
@@ -604,7 +608,8 @@
     $('#f').onsubmit = async e => {
       e.preventDefault(); const f = new FormData(e.target);
       const status = f.get('status') || 'todo';
-      const rec = { title: f.get('title').trim(), child_id: f.get('child_id') || null, assignee: f.get('assignee') || null, due_at: f.get('due') ? new Date(f.get('due') + 'T12:00:00').toISOString() : null, notes: f.get('notes').trim() || null, status, done_at: status === 'done' ? (t.done_at || new Date().toISOString()) : null };
+      const who = f.get('assignee');
+      const rec = { title: f.get('title').trim(), child_id: f.get('child_id') || null, assignee: who && who !== 'child' ? who : null, child_assignee: who === 'child', due_at: f.get('due') ? new Date(f.get('due') + 'T12:00:00').toISOString() : null, notes: f.get('notes').trim() || null, status, done_at: status === 'done' ? (t.done_at || new Date().toISOString()) : null };
       let q;
       if (isNew) q = sb.from('tasks').insert({ ...rec, item_id: t.item_id || null, created_by: S.me.user_id }).select().single();
       else q = sb.from('tasks').update(rec).eq('id', t.id).select().single();
