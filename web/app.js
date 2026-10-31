@@ -23,7 +23,7 @@
     reads: new Set(),      // item ids read by me
     messages: [],
     view: 'today',
-    taskFilter: 'open',
+    taskFilter: 'all',
     itemsFilter: 'all',
     itemsChild: '',
     itemsKind: '',
@@ -111,6 +111,23 @@
     watchForUpdates();
   }
 
+  // -------------------------------------------------------------- motyw
+  function getTheme() { try { return localStorage.getItem('adr_theme') || 'auto'; } catch (e) { return 'auto'; } }
+  function applyThemeIcon() {
+    const t = getTheme(); const b = $('#btn-theme');
+    b.textContent = t === 'dark' ? '☾' : t === 'light' ? '☀' : '◐';
+    b.title = 'Motyw: ' + (t === 'dark' ? 'ciemny' : t === 'light' ? 'jasny' : 'automatyczny (jak system)');
+    const meta = document.querySelector('meta[name=theme-color]');
+    const dark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (meta) meta.content = dark ? '#0b1020' : '#ffffff';
+  }
+  function cycleTheme() {
+    const order = ['auto', 'dark', 'light']; const next = order[(order.indexOf(getTheme()) + 1) % order.length];
+    try { if (next === 'auto') localStorage.removeItem('adr_theme'); else localStorage.setItem('adr_theme', next); } catch (e) {}
+    if (next === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', next);
+    applyThemeIcon(); toast('Motyw: ' + (next === 'dark' ? 'ciemny' : next === 'light' ? 'jasny' : 'automatyczny'));
+  }
+
   async function refreshData() {
     const b = $('#btn-refresh'); b.classList.add('spinning');
     try { await loadAll(); render(); toast('Odświeżono'); } catch (e) { fail(e); }
@@ -170,6 +187,7 @@
     $('#fab').onclick = () => openAddMenu();
     $('#btn-settings').onclick = openSettings;
     $('#btn-refresh').onclick = refreshData;
+    $('#btn-theme').onclick = cycleTheme; applyThemeIcon();
     $('#modal-close').onclick = closeModal;
     $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
 
@@ -177,7 +195,7 @@
     $('#cal-next').onclick = () => { S.calStart = addDays(S.calStart, 7); render(); };
     $('#cal-today').onclick = () => { S.calStart = startOfWeek(new Date()); render(); };
 
-    $$('#task-filter button').forEach(b => b.onclick = () => { S.taskFilter = b.dataset.f; render(); });
+    $('#task-filter').onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; S.taskFilter = b.dataset.f; render(); };
     $$('#items-filter button').forEach(b => b.onclick = () => { S.itemsFilter = b.dataset.f; render(); });
     $('#items-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.itemsChild = b.dataset.child; render(); };
     $$('#items-kind .tile').forEach(b => b.onclick = () => { S.itemsKind = S.itemsKind === b.dataset.k ? '' : b.dataset.k; render(); });
@@ -224,7 +242,7 @@
   }
 
   function renderBadges() {
-    const myOpen = S.tasks.filter(t => t.status === 'todo' && t.assignee === S.me.user_id).length;
+    const myOpen = S.tasks.filter(t => t.status !== 'done' && t.assignee === S.me.user_id).length;
     const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade').length;
     const unreadGrades = S.items.filter(i => !S.reads.has(i.id) && i.kind === 'grade').length;
     $('#badge-grades').textContent = unreadGrades || '';
@@ -251,7 +269,7 @@
   function renderToday() {
     const now = new Date(); const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
     const in7 = addDays(todayStart, 7);
-    const myTasks = S.tasks.filter(t => t.status === 'todo' && (t.assignee === S.me.user_id || !t.assignee));
+    const myTasks = S.tasks.filter(t => t.status !== 'done' && (t.assignee === S.me.user_id || !t.assignee));
     const overdue = myTasks.filter(t => t.due_at && new Date(t.due_at) < todayStart);
     const dueSoon = myTasks.filter(t => !t.due_at || (new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7));
     const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7);
@@ -303,16 +321,40 @@
     wireCards($('#calendar-content'));
   }
 
-  // ---- ZADANIA
+  // ---- ZADANIA: kanban
+  const STATUS_COLS = [['todo', 'Do zrobienia'], ['doing', 'W toku'], ['done', 'Zrobione']];
   function renderTasks() {
     const f = S.taskFilter; const p = partner();
     let list = S.tasks;
-    if (f === 'open') list = list.filter(t => t.status === 'todo');
-    if (f === 'mine') list = list.filter(t => t.status === 'todo' && t.assignee === S.me.user_id);
-    if (f === 'partner') list = list.filter(t => t.status === 'todo' && p && t.assignee === p.user_id);
-    if (f === 'done') list = list.filter(t => t.status === 'done').sort((a, b) => new Date(b.done_at) - new Date(a.done_at)).slice(0, 50);
-    $('#tasks-content').innerHTML = list.length ? list.map(taskCard).join('') : `<div class="empty">Brak zadań w tym widoku.</div>`;
-    wireCards($('#tasks-content'));
+    if (f === 'mine') list = list.filter(t => t.assignee === S.me.user_id);
+    if (f === 'partner') list = list.filter(t => p && t.assignee === p.user_id);
+    if (f === 'none') list = list.filter(t => !t.assignee);
+    const byDue = (a, b) => (a.due_at ? new Date(a.due_at) : Infinity) - (b.due_at ? new Date(b.due_at) : Infinity) || new Date(a.created_at) - new Date(b.created_at);
+    let h = '';
+    for (const [st, label] of STATUS_COLS) {
+      let col = list.filter(t => t.status === st);
+      col = st === 'done' ? col.sort((a, b) => new Date(b.done_at || 0) - new Date(a.done_at || 0)).slice(0, 30) : col.sort(byDue);
+      h += `<div class="col" data-status="${st}"><div class="col-head"><span>${label}</span><span class="n">${col.length}</span></div>`
+        + (col.length ? col.map(t => taskCard(t, true)).join('') : `<div class="col-empty">${st === 'done' ? 'Jeszcze nic' : 'Pusto'}</div>`)
+        + (st === 'done' ? '' : `<button class="col-add" data-act="add-task" data-status="${st}">+ Dodaj</button>`)
+        + '</div>';
+    }
+    const root = $('#tasks-content');
+    root.innerHTML = h;
+    wireCards(root);
+    wireDragDrop(root);
+  }
+
+  function wireDragDrop(root) {
+    root.querySelectorAll('.card[draggable]').forEach(c => {
+      c.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', c.dataset.task); e.dataTransfer.effectAllowed = 'move'; c.classList.add('dragging'); });
+      c.addEventListener('dragend', () => c.classList.remove('dragging'));
+    });
+    root.querySelectorAll('.col').forEach(col => {
+      col.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; col.classList.add('drop'); });
+      col.addEventListener('dragleave', () => col.classList.remove('drop'));
+      col.addEventListener('drop', e => { e.preventDefault(); col.classList.remove('drop'); const id = e.dataTransfer.getData('text/plain'); const t = S.tasks.find(x => x.id === id); if (t && t.status !== col.dataset.status) setTaskStatus(id, col.dataset.status); });
+    });
   }
 
   // ---- WPISY
@@ -397,18 +439,21 @@
   }
 
   // -------------------------------------------------------------- cards
-  function taskCard(t) {
+  function taskCard(t, board = false) {
     const c = child(t.child_id); const col = c ? c.color : 'var(--line)';
     const due = t.due_at ? new Date(t.due_at) : null;
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const over = t.status === 'todo' && due && due < todayStart;
-    return `<div class="card ${t.status === 'done' ? 'done' : ''}" style="border-left-color:${col}" data-task="${t.id}">
-      <button class="check ${t.status === 'done' ? 'on' : ''}" data-act="toggle" title="Oznacz">${t.status === 'done' ? '✓' : ''}</button>
+    const over = t.status !== 'done' && due && due < todayStart;
+    const doing = t.status === 'doing';
+    const moves = board ? `<div class="actions">${t.status !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${t.status !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${t.status === 'done' ? '← ' : ''}w toku${t.status === 'todo' ? ' →' : ''}</button>` : ''}${t.status !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
+    return `<div class="card ${t.status === 'done' ? 'done' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
+      <button class="check ${t.status === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="Oznacz jako zrobione">${t.status === 'done' ? '✓' : ''}</button>
       <div class="grow clickable" data-act="edit-task">
         <div class="title">${esc(t.title)}</div>
-        <div class="meta">${childChip(t.child_id)}${memberChip(t.assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}</div>
+        <div class="meta">${doing && !board ? '<span class="chip doing">W toku</span>' : ''}${childChip(t.child_id)}${memberChip(t.assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
-      </div></div>`;
+      </div>
+      ${board ? moves : (t.status === 'done' ? '' : `<div class="actions"><button class="btn sm" data-act="cycle" title="Zmień status">${doing ? '↩ do zrobienia' : '▶ w toku'}</button></div>`)}</div>`;
   }
 
   function eventCard(e) {
@@ -442,7 +487,11 @@
       const act = btn.dataset.act;
       const card = btn.closest('.card');
       if (act === 'settings') return openSettings();
+      if (act === 'add-task') return openTaskForm({ status: btn.dataset.status });
       if (act === 'toggle') return toggleTask(card.dataset.task);
+      if (act === 'move') return setTaskStatus(card.dataset.task, btn.dataset.to);
+      if (act === 'add-task') return openTaskForm({ status: btn.dataset.status });
+      if (act === 'cycle') return setTaskStatus(card.dataset.task, S.tasks.find(t => t.id === card.dataset.task).status === 'doing' ? 'todo' : 'doing');
       if (act === 'edit-task') return openTaskForm(S.tasks.find(t => t.id === card.dataset.task));
       if (act === 'edit-event') return openEventForm(S.events.find(x => x.id === card.dataset.event));
       if (act === 'event-to-task') { const ev = S.events.find(x => x.id === card.dataset.event); return openTaskForm({ title: ev.title, child_id: ev.child_id, due_at: ev.starts_at, notes: ev.notes }); }
@@ -456,6 +505,13 @@
     const t = S.tasks.find(x => x.id === id);
     const done = t.status !== 'done';
     t.status = done ? 'done' : 'todo'; t.done_at = done ? new Date().toISOString() : null; render();
+    const { error } = await sb.from('tasks').update({ status: t.status, done_at: t.done_at }).eq('id', id);
+    if (error) fail(error);
+  }
+
+  async function setTaskStatus(id, status) {
+    const t = S.tasks.find(x => x.id === id);
+    t.status = status; t.done_at = status === 'done' ? new Date().toISOString() : null; render();
     const { error } = await sb.from('tasks').update({ status: t.status, done_at: t.done_at }).eq('id', id);
     if (error) fail(error);
   }
@@ -522,14 +578,18 @@
           <label>Dziecko<select name="child_id">${childOptions(t.child_id)}</select></label>
           <label>Kto robi<select name="assignee">${memberOptions(t.assignee ?? (isNew ? S.me.user_id : null))}</select></label>
         </div>
-        <label>Termin<input type="date" name="due" value="${t.due_at ? dateKey(t.due_at) : ''}"></label>
+        <div class="row">
+          <label>Termin<input type="date" name="due" value="${t.due_at ? dateKey(t.due_at) : ''}"></label>
+          <label>Status<select name="status">${[['todo', 'Do zrobienia'], ['doing', 'W toku'], ['done', 'Zrobione']].map(([v, l]) => `<option value="${v}" ${(t.status || 'todo') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        </div>
         <label>Notatki<textarea name="notes">${esc(t.notes || '')}</textarea></label>
         <button class="btn primary" type="submit">${isNew ? 'Dodaj' : 'Zapisz'}</button>
         ${isNew ? '' : '<button class="btn danger" type="button" id="f-del" style="width:100%;margin-top:8px">Usuń zadanie</button>'}
       </form>`);
     $('#f').onsubmit = async e => {
       e.preventDefault(); const f = new FormData(e.target);
-      const rec = { title: f.get('title').trim(), child_id: f.get('child_id') || null, assignee: f.get('assignee') || null, due_at: f.get('due') ? new Date(f.get('due') + 'T12:00:00').toISOString() : null, notes: f.get('notes').trim() || null };
+      const status = f.get('status') || 'todo';
+      const rec = { title: f.get('title').trim(), child_id: f.get('child_id') || null, assignee: f.get('assignee') || null, due_at: f.get('due') ? new Date(f.get('due') + 'T12:00:00').toISOString() : null, notes: f.get('notes').trim() || null, status, done_at: status === 'done' ? (t.done_at || new Date().toISOString()) : null };
       let q;
       if (isNew) q = sb.from('tasks').insert({ ...rec, item_id: t.item_id || null, created_by: S.me.user_id }).select().single();
       else q = sb.from('tasks').update(rec).eq('id', t.id).select().single();
