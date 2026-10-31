@@ -37,6 +37,7 @@
 
   const VIEW_TITLES = { today: 'Dziś', calendar: 'Kalendarz', tasks: 'Zadania', items: 'Wpisy', grades: 'Oceny', chat: 'Czat' };
   const TEST_RE = /sprawdzian|kartk[óo]wk|dyktand|praca klasowa|klas[óo]wk|\btest\b|egzamin/i;
+  const HOMEWORK_RE = /zadani|praca domowa|zad\. dom/i;
   const KIND_LABEL = { message: 'Wiadomość', announcement: 'Ogłoszenie', homework: 'Zadanie domowe', event: 'Wydarzenie', grade: 'Ocena', attendance: 'Frekwencja', other: 'Inne' };
   const SOURCE_LABEL = { librus: 'Librus', '4parents': '4Parents', manual: 'Ręcznie' };
   const COLORS = ['#0ea5e9', '#8b5cf6', '#ec4899', '#f97316', '#22c55e', '#eab308', '#14b8a6', '#ef4444'];
@@ -288,8 +289,8 @@
   function kindMatch(i, k) {
     if (!k) return i.kind !== 'grade';
     if (k === 'message') return i.kind === 'message';
-    if (k === 'homework') return i.kind === 'homework';
-    if (k === 'test') return i.kind === 'event' && TEST_RE.test((i.sender || '') + ' ' + i.title);
+    if (k === 'homework') return i.kind === 'homework' || (i.kind === 'event' && HOMEWORK_RE.test(i.sender || ''));
+    if (k === 'test') return i.kind === 'event' && TEST_RE.test(i.sender || '') && !HOMEWORK_RE.test(i.sender || '');
     if (k === 'other') return i.kind !== 'grade' && !kindMatch(i, 'message') && !kindMatch(i, 'homework') && !kindMatch(i, 'test');
     return true;
   }
