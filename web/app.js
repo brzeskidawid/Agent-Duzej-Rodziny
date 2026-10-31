@@ -28,7 +28,8 @@
     itemsChild: '',
     itemsKind: '',
     gradesChild: '',
-    calStart: startOfWeek(new Date()),
+    calMonth: startOfMonth(new Date()),
+    calSel: dateKey(new Date()),
     lastChatSeen: (() => { try { return Number(localStorage.getItem('adr_lastChatSeen') || 0); } catch (e) { return 0; } })(),
   };
 
@@ -45,6 +46,8 @@
   const MONTHS = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
 
   // -------------------------------------------------------------- utils
+  function startOfMonth(d) { const x = new Date(d); x.setDate(1); x.setHours(0, 0, 0, 0); return x; }
+  function addMonths(d, n) { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; }
   function startOfWeek(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); const day = (x.getDay() + 6) % 7; x.setDate(x.getDate() - day); return x; }
   function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
   function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
@@ -164,7 +167,7 @@
     const [ch, ta, ev, it, rd, ms] = await Promise.all([
       sb.from('children').select('*').order('sort_order').order('name'),
       sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'),
-      sb.from('events').select('*').gte('starts_at', since.toISOString()).order('starts_at'),
+      sb.from('events').select('*').order('starts_at'),
       sb.from('items').select('*').order('published_at', { ascending: false }).limit(300),
       sb.from('item_reads').select('item_id').eq('user_id', S.me.user_id),
       sb.from('messages').select('*').order('created_at', { ascending: false }).limit(200),
@@ -178,7 +181,7 @@
     sb.channel('family')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, p => { if (p.eventType === 'INSERT') { S.messages.push(p.new); if (S.view === 'chat') markChatSeen(); render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async () => { const { data } = await sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'); if (data) { S.tasks = data; render(); } })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => { const since = new Date(); since.setDate(since.getDate() - 60); const { data } = await sb.from('events').select('*').gte('starts_at', since.toISOString()).order('starts_at'); if (data) { S.events = data; render(); } })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => { const { data } = await sb.from('events').select('*').order('starts_at'); if (data) { S.events = data; render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, async () => { const { data } = await sb.from('items').select('*').order('published_at', { ascending: false }).limit(300); if (data) { S.items = data; render(); } })
       .subscribe();
   }
@@ -193,9 +196,9 @@
     $('#modal-close').onclick = closeModal;
     $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
 
-    $('#cal-prev').onclick = () => { S.calStart = addDays(S.calStart, -7); render(); };
-    $('#cal-next').onclick = () => { S.calStart = addDays(S.calStart, 7); render(); };
-    $('#cal-today').onclick = () => { S.calStart = startOfWeek(new Date()); render(); };
+    $('#cal-prev').onclick = () => { S.calMonth = addMonths(S.calMonth, -1); render(); };
+    $('#cal-next').onclick = () => { S.calMonth = addMonths(S.calMonth, 1); render(); };
+    $('#cal-today').onclick = () => { S.calMonth = startOfMonth(new Date()); S.calSel = dateKey(new Date()); render(); };
 
     $('#task-filter').onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; S.taskFilter = b.dataset.f; render(); };
     $$('#items-filter button').forEach(b => b.onclick = () => { S.itemsFilter = b.dataset.f; render(); });
@@ -308,21 +311,40 @@
   }
   function dayHead(d) { return `<div class="day-head ${isToday(d) ? 'today' : ''}"><span class="d">${isToday(d) ? 'Dziś' : fmtDate(d)}</span><span class="w">${DAYS[d.getDay()]}</span></div>`; }
 
-  // ---- KALENDARZ (tydzień)
+  // ---- KALENDARZ (miesiąc)
+  const MONTHS_FULL = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
   function renderCalendar() {
-    const end = addDays(S.calStart, 7);
-    $('#cal-range').textContent = `${fmtDate(S.calStart)} – ${fmtDate(addDays(S.calStart, 6))}`;
-    let h = '';
-    for (let i = 0; i < 7; i++) {
-      const d = addDays(S.calStart, i); const key = dateKey(d);
-      const evs = S.events.filter(e => dateKey(e.starts_at) === key);
-      const tks = S.tasks.filter(t => t.due_at && dateKey(t.due_at) === key);
-      h += dayHead(d);
-      if (!evs.length && !tks.length) { h += `<div class="muted" style="padding:0 0 4px 4px;font-size:.85rem">—</div>`; continue; }
-      h += evs.map(eventCard).join('') + tks.map(taskCard).join('');
+    const m0 = S.calMonth;
+    $('#cal-range').textContent = `${MONTHS_FULL[m0.getMonth()]} ${m0.getFullYear()}`;
+    const gridStart = startOfWeek(m0);
+    const todayKey = dateKey(new Date());
+    const byDay = new Map();
+    const push = (k, x) => { if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(x); };
+    for (const e of S.events) push(dateKey(e.starts_at), { kind: 'event', when: new Date(e.starts_at), e });
+    for (const t of S.tasks) if (t.due_at && t.status !== 'done' && !t.auto) push(dateKey(t.due_at), { kind: 'task', when: new Date(t.due_at), t });
+    let h = '<div class="month">' + ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'].map(d => `<div class="dow">${d}</div>`).join('');
+    for (let i = 0; i < 42; i++) {
+      const d = addDays(gridStart, i); const k = dateKey(d);
+      if (i >= 35 && d.getMonth() !== m0.getMonth()) break;
+      const list = (byDay.get(k) || []).sort((a, b) => a.when - b.when);
+      const cls = ['day', d.getMonth() !== m0.getMonth() ? 'other' : '', k === todayKey ? 'today' : '', k === S.calSel ? 'sel' : '', d.getDay() === 0 || d.getDay() === 6 ? 'weekend' : ''].join(' ');
+      const max = 3;
+      h += `<div class="${cls}" data-day="${k}"><div class="dn">${d.getDate()}</div>` + list.slice(0, max).map(x => {
+        if (x.kind === 'task') return `<div class="pill task" title="${esc(x.t.title)}">☑ ${esc(x.t.title)}</div>`;
+        const c = child(x.e.child_id); const isTest = x.e.source !== 'manual' && TEST_RE.test(x.e.title);
+        return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(x.e.title)}">${esc(x.e.title)}</div>`;
+      }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
     }
+    h += '</div>';
     $('#calendar-content').innerHTML = h;
-    wireCards($('#calendar-content'));
+    $('#calendar-content').onclick = e => { const d = e.target.closest('[data-day]'); if (!d) return; S.calSel = d.dataset.day; render(); };
+
+    // szczegóły wybranego dnia
+    const sel = new Date(S.calSel + 'T12:00:00');
+    const list = (byDay.get(S.calSel) || []).sort((a, b) => a.when - b.when);
+    const dd = $('#calendar-day');
+    dd.innerHTML = `<div class="day-detail">${dayHead(sel)}` + (list.length ? list.map(x => x.kind === 'task' ? taskCard(x.t) : eventCard(x.e)).join('') : `<div class="muted" style="padding:4px 0 10px 4px;font-size:.9rem">Nic zaplanowanego.</div>`) + `<button class="btn sm" data-act="add-event" data-day="${S.calSel}">+ Wydarzenie tego dnia</button></div>`;
+    wireCards(dd);
   }
 
   // ---- ZADANIA: kanban
@@ -509,6 +531,7 @@
       const act = btn.dataset.act;
       const card = btn.closest('.card');
       if (act === 'settings') return openSettings();
+      if (act === 'add-event') return openEventForm({ starts_at: new Date(btn.dataset.day + 'T12:00:00').toISOString() });
       if (act === 'add-task') return openTaskForm({ status: btn.dataset.status, assignee: btn.dataset.backlog ? null : undefined });
       if (act === 'toggle') return toggleTask(card.dataset.task);
       if (act === 'move') return setTaskStatus(card.dataset.task, btn.dataset.to);
