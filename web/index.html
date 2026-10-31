@@ -2,144 +2,21 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
   <title>Agent Dużej Rodziny</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="icon.svg">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="styles.css">
-  <script>try{var t=localStorage.getItem('adr_theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+  <style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px -apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7fb;color:#0f172a}a{color:#0ea5e9}</style>
 </head>
 <body>
-
-<!-- ============ LOGOWANIE ============ -->
-<section id="auth" class="screen auth hidden">
-  <div class="auth-card">
-    <div class="brand"><span class="logo">ADR</span><h1>Agent Dużej Rodziny</h1></div>
-    <p class="muted">Zaloguj się kontem rodzinnym.</p>
-    <form id="login-form">
-      <label>E-mail<input type="email" name="email" required autocomplete="username"></label>
-      <label>Hasło<input type="password" name="password" required autocomplete="current-password"></label>
-      <button class="btn primary" type="submit">Zaloguj</button>
-      <p id="login-error" class="error"></p>
-    </form>
-  </div>
-</section>
-
-<!-- ============ APLIKACJA ============ -->
-<section id="app" class="screen hidden">
-  <header class="topbar">
-    <div class="brand small"><span class="logo">ADR</span><span id="view-title">Dziś</span></div>
-    <div class="topbar-actions">
-      <span id="me-badge" class="pill"></span>
-      <button id="btn-theme" class="icon-btn" title="Motyw">◐</button>
-      <button id="btn-refresh" class="icon-btn" title="Odśwież dane">↻</button>
-      <button id="btn-settings" class="icon-btn" title="Ustawienia">⚙</button>
-    </div>
-  </header>
-
-  <main id="views">
-    <!-- DZIŚ -->
-    <div class="view" data-view="today">
-      <div id="today-content"></div>
-    </div>
-
-    <!-- KALENDARZ (miesiąc) -->
-    <div class="view hidden" data-view="calendar">
-      <div class="toolbar">
-        <button class="btn ghost" id="cal-prev">‹</button>
-        <strong id="cal-range"></strong>
-        <button class="btn ghost" id="cal-next">›</button>
-        <button class="btn ghost" id="cal-today">Dziś</button>
-      </div>
-      <div class="chips" id="cal-child"></div>
-      <div class="chips" id="cal-kind">
-        <button data-k="" class="on">Wszystko</button>
-        <button data-k="test"><span class="pi">!</span>Sprawdziany</button>
-        <button data-k="homework">📚 Zadania dom.</button>
-        <button data-k="other">📣 Inne</button>
-      </div>
-      <div id="calendar-content"></div>
-      <div id="calendar-day"></div>
-    </div>
-
-    <!-- ZADANIA (kanban) -->
-    <div class="view hidden" data-view="tasks">
-      <div class="chips" id="task-filter">
-        <button data-f="all" class="on">Wszystkie</button>
-        <button data-f="mine">Moje</button>
-        <button data-f="partner">Partnera</button>
-        <button data-f="child">Dziecko</button>
-      </div>
-      <div class="board" id="tasks-content"></div>
-      <div class="backlog" id="tasks-backlog"></div>
-    </div>
-
-    <!-- WPISY -->
-    <div class="view hidden" data-view="items">
-      <div class="chips" id="items-child"></div>
-      <div class="tiles" id="items-kind">
-        <button class="tile" data-k="message"><span class="ico">✉</span><span class="lbl">Wiadomości</span><span class="cnt"></span></button>
-        <button class="tile" data-k="test"><span class="ico">📝</span><span class="lbl">Sprawdziany</span><span class="cnt"></span></button>
-        <button class="tile" data-k="homework"><span class="ico">📚</span><span class="lbl">Zadania domowe</span><span class="cnt"></span></button>
-        <button class="tile" data-k="other"><span class="ico">📣</span><span class="lbl">Inne</span><span class="cnt"></span></button>
-        <button class="tile archive" data-k="archive"><span class="ico">🗄</span><span class="lbl">Archiwum</span><span class="cnt"></span></button>
-      </div>
-      <div class="toolbar">
-        <div class="seg" id="items-filter">
-          <button data-f="all" class="on">Wszystkie</button>
-          <button data-f="unread">Tylko nowe</button>
-        </div>
-        <span class="muted" id="items-summary" style="font-size:.85rem"></span>
-      </div>
-      <div id="items-content"></div>
-    </div>
-
-    <!-- OCENY -->
-    <div class="view hidden" data-view="grades">
-      <div class="chips" id="grades-child"></div>
-      <p class="muted" id="grades-summary" style="margin:0 0 10px;font-size:.85rem"></p>
-      <div id="grades-content"></div>
-    </div>
-
-    <!-- CZAT -->
-    <div class="view hidden" data-view="chat">
-      <div id="chat-log" class="chat-log"></div>
-      <form id="chat-form" class="chat-form">
-        <input id="chat-input" type="text" placeholder="Napisz wiadomość…" autocomplete="off" required>
-        <button class="btn primary" type="submit">Wyślij</button>
-      </form>
-    </div>
-  </main>
-
-  <button id="fab" class="fab" title="Dodaj">+</button>
-
-  <nav class="bottom-nav">
-    <button data-nav="today" class="on"><span class="ico">☀</span>Dziś</button>
-    <button data-nav="calendar"><span class="ico">▦</span>Kalendarz</button>
-    <button data-nav="tasks"><span class="ico">☑</span>Zadania<span class="badge" id="badge-tasks"></span></button>
-    <button data-nav="items"><span class="ico">✉</span>Wiadomości<span class="badge" id="badge-items"></span></button>
-    <button data-nav="grades"><span class="ico">★</span>Oceny<span class="badge" id="badge-grades"></span></button>
-    <button data-nav="chat"><span class="ico">💬</span>Czat<span class="badge" id="badge-chat"></span></button>
-  </nav>
-</section>
-
-<!-- ============ MODALE ============ -->
-<div id="modal" class="modal hidden">
-  <div class="modal-card">
-    <div class="modal-head"><h2 id="modal-title"></h2><button class="icon-btn" id="modal-close">✕</button></div>
-    <div id="modal-body"></div>
-  </div>
-</div>
-
-<div id="toast" class="toast hidden"></div>
-<div id="update-bar" class="update-bar hidden">Jest nowa wersja aplikacji <button class="btn sm" id="update-btn">Odśwież</button></div>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script>
-<script src="app.js"></script>
+  <p>Przenoszę do aplikacji… <a href="app/">Kliknij, jeśli nic się nie dzieje</a>.</p>
+  <script>
+    (async () => {
+      try {
+        if ('serviceWorker' in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); for (const r of regs) await r.unregister(); }
+        if (window.caches) { const keys = await caches.keys(); for (const k of keys) await caches.delete(k); }
+      } catch (e) {}
+      location.replace('app/');
+    })();
+  </script>
 </body>
 </html>
