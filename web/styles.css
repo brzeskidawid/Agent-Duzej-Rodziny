@@ -139,3 +139,6 @@ form textarea{min-height:80px;resize:vertical}
 .tile .cnt.new{color:var(--danger);font-weight:600}
 .tile.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .tile.on .cnt,.tile.on .cnt.new{color:var(--accent-ink);opacity:.85}
+
+.update-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:999px;box-shadow:var(--shadow);z-index:60;font-size:.9rem;display:flex;gap:10px;align-items:center;white-space:nowrap}
+.update-bar .btn{background:var(--bg);color:var(--ink);border-color:transparent}

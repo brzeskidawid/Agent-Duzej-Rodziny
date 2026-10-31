@@ -108,6 +108,28 @@
     subscribeRealtime();
     render();
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    watchForUpdates();
+  }
+
+  // -------------------------------------------------------------- aktualizacje aplikacji
+  let currentVersion = null;
+  async function fetchVersion() {
+    try { const r = await fetch('version.txt', { cache: 'no-store' }); return r.ok ? (await r.text()).trim() : null; } catch (e) { return null; }
+  }
+  async function checkForUpdate() {
+    const v = await fetchVersion();
+    if (!v) return;
+    if (currentVersion === null) { currentVersion = v; return; }
+    if (v !== currentVersion) $('#update-bar').classList.remove('hidden');
+  }
+  function watchForUpdates() {
+    $('#update-btn').onclick = async () => {
+      try { const regs = await navigator.serviceWorker?.getRegistrations?.(); for (const r of regs || []) await r.unregister(); const keys = await caches?.keys?.(); for (const k of keys || []) await caches.delete(k); } catch (e) {}
+      location.reload();
+    };
+    checkForUpdate();
+    setInterval(checkForUpdate, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
   }
 
   // -------------------------------------------------------------- data
