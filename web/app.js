@@ -24,7 +24,7 @@
     messages: [],
     view: 'today',
     taskFilter: 'open',
-    itemsFilter: 'unread',
+    itemsFilter: 'all',
     itemsChild: '',
     itemsKind: '',
     gradesChild: '',
@@ -148,9 +148,9 @@
 
     $$('#task-filter button').forEach(b => b.onclick = () => { S.taskFilter = b.dataset.f; render(); });
     $$('#items-filter button').forEach(b => b.onclick = () => { S.itemsFilter = b.dataset.f; render(); });
-    $('#items-child').onchange = e => { S.itemsChild = e.target.value; render(); };
-    $$('#items-kind button').forEach(b => b.onclick = () => { S.itemsKind = b.dataset.k; render(); });
-    $('#grades-child').onchange = e => { S.gradesChild = e.target.value; render(); };
+    $('#items-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.itemsChild = b.dataset.child; render(); };
+    $$('#items-kind .tile').forEach(b => b.onclick = () => { S.itemsKind = S.itemsKind === b.dataset.k ? '' : b.dataset.k; render(); });
+    $('#grades-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.gradesChild = b.dataset.child; render(); };
 
     $('#chat-form').onsubmit = async e => {
       e.preventDefault();
@@ -183,7 +183,12 @@
     renderChildSelect();
     $$('#task-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === S.taskFilter));
     $$('#items-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === S.itemsFilter));
-    $$('#items-kind button').forEach(b => b.classList.toggle('on', b.dataset.k === S.itemsKind));
+    $$('#items-kind .tile').forEach(b => {
+      b.classList.toggle('on', b.dataset.k === S.itemsKind);
+      const all = S.items.filter(i => kindMatch(i, b.dataset.k) && (!S.itemsChild || i.child_id === S.itemsChild));
+      const nw = all.filter(i => !S.reads.has(i.id)).length;
+      const c = b.querySelector('.cnt'); c.textContent = nw ? `${nw} nowe` : (all.length ? `${all.length}` : '—'); c.classList.toggle('new', nw > 0);
+    });
     ({ today: renderToday, calendar: renderCalendar, tasks: renderTasks, items: renderItems, grades: renderGrades, chat: renderChat })[S.view]();
   }
 
@@ -198,16 +203,17 @@
     $('#badge-chat').textContent = newChat || '';
   }
 
+  function childChips(selected, allowAll) {
+    const chip = (id, name, color) => `<button data-child="${id}" class="${selected === id ? 'on' : ''}">${color ? `<span class="dot" style="background:${color}"></span>` : ''}${esc(name)}</button>`;
+    return (allowAll ? chip('', 'Wszystkie dzieci', null) : '') + S.children.map(c => chip(c.id, c.name, c.color)).join('');
+  }
+
   function renderChildSelect() {
-    const sel = $('#items-child');
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">Wszystkie dzieci</option>' + S.children.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-    sel.value = cur;
-    const gs = $('#grades-child');
+    $('#items-child').innerHTML = childChips(S.itemsChild, true);
     const withGrades = S.children.filter(c => S.items.some(i => i.kind === 'grade' && i.child_id === c.id));
     const list = withGrades.length ? withGrades : S.children;
     if (!S.gradesChild || !list.some(c => c.id === S.gradesChild)) S.gradesChild = list[0]?.id || '';
-    gs.innerHTML = list.map(c => `<option value="${c.id}" ${c.id === S.gradesChild ? 'selected' : ''}>${esc(c.name)}</option>`).join('') || '<option value="">— brak dzieci —</option>';
+    $('#grades-child').innerHTML = S.children.map(c => `<button data-child="${c.id}" class="${S.gradesChild === c.id ? 'on' : ''}"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</button>`).join('') || '<span class="muted">Dodaj dzieci w ustawieniach.</span>';
   }
 
   // ---- DZIŚ
@@ -302,9 +308,11 @@
         + (past.length ? `<div class="section-title">Minione</div>` + past.map(itemCard).join('') : '');
     } else {
       html = list.length ? list.map(itemCard).join('')
-        : `<div class="empty">${S.items.length ? (S.itemsFilter === 'unread' ? 'Wszystko przeczytane ✓' : 'Brak wpisów w tej kategorii.') : 'Jeszcze nie ma żadnych wpisów. Pojawią się tu, gdy uruchomisz workera (Librus / 4Parents) albo dodasz wpis ręcznie.'}</div>`;
+        : `<div class="empty">${S.items.length ? (S.itemsFilter === 'unread' ? 'Brak nowych wpisów ✓' : 'Brak wpisów w tej kategorii.') : 'Jeszcze nie ma żadnych wpisów. Pojawią się tu, gdy uruchomisz workera (Librus / 4Parents) albo dodasz wpis ręcznie.'}</div>`;
     }
     $('#items-content').innerHTML = html;
+    const nw = list.filter(i => !S.reads.has(i.id)).length;
+    $('#items-summary').textContent = list.length ? `${list.length} wpisów${nw ? ` · ${nw} nowych` : ''}` : '';
     wireCards($('#items-content'));
   }
 

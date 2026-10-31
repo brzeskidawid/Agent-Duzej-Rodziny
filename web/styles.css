@@ -69,7 +69,8 @@ form textarea{min-height:80px;resize:vertical}
 .card .grow{flex:1;min-width:0}
 .card .actions{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
 .card.clickable{cursor:pointer}
-.card.unread{outline:1px solid color-mix(in srgb,var(--line),var(--ink) 20%)}
+.card.unread{outline:2px solid color-mix(in srgb,var(--danger),transparent 45%)}
+.card.unread .title{color:var(--ink)}
 .chip.unread{outline:2px solid var(--danger)}
 .check{width:22px;height:22px;border-radius:50%;border:2px solid var(--muted);background:transparent;cursor:pointer;flex-shrink:0;margin-top:2px}
 .check.on{background:var(--ok);border-color:var(--ok);color:#fff;font-size:.8rem;display:grid;place-items:center}
@@ -123,3 +124,18 @@ form textarea{min-height:80px;resize:vertical}
 .gchip b{font-size:.95rem}
 .gchip small{font-size:.62rem;color:var(--muted)}
 .gchip.unread{outline:2px solid var(--danger)}
+
+/* ---------- kafelki i chipy ---------- */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chips button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:.9rem}
+.chips button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.chips button .dot{width:10px;height:10px}
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+@media(min-width:640px){.tiles{grid-template-columns:repeat(4,1fr)}}
+.tile{position:relative;border:1px solid var(--line);background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 12px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;transition:.15s}
+.tile .ico{font-size:1.3rem}
+.tile .lbl{font-weight:600}
+.tile .cnt{font-size:.78rem;color:var(--muted)}
+.tile .cnt.new{color:var(--danger);font-weight:600}
+.tile.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.tile.on .cnt,.tile.on .cnt.new{color:var(--accent-ink);opacity:.85}

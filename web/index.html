@@ -70,31 +70,27 @@
 
     <!-- WPISY -->
     <div class="view hidden" data-view="items">
-      <div class="toolbar">
-        <div class="seg" id="items-filter">
-          <button data-f="unread" class="on">Nieprzeczytane</button>
-          <button data-f="all">Wszystkie</button>
-        </div>
-        <select id="items-child" class="select"><option value="">Wszystkie dzieci</option></select>
+      <div class="chips" id="items-child"></div>
+      <div class="tiles" id="items-kind">
+        <button class="tile" data-k="message"><span class="ico">✉</span><span class="lbl">Wiadomości</span><span class="cnt"></span></button>
+        <button class="tile" data-k="test"><span class="ico">📝</span><span class="lbl">Sprawdziany</span><span class="cnt"></span></button>
+        <button class="tile" data-k="homework"><span class="ico">📚</span><span class="lbl">Zadania domowe</span><span class="cnt"></span></button>
+        <button class="tile" data-k="other"><span class="ico">📣</span><span class="lbl">Inne</span><span class="cnt"></span></button>
       </div>
       <div class="toolbar">
-        <div class="seg scroll-x" id="items-kind">
-          <button data-k="" class="on">Wszystko</button>
-          <button data-k="message">Wiadomości</button>
-          <button data-k="test">Sprawdziany</button>
-          <button data-k="homework">Zadania dom.</button>
-          <button data-k="other">Inne</button>
+        <div class="seg" id="items-filter">
+          <button data-f="all" class="on">Wszystkie</button>
+          <button data-f="unread">Tylko nowe</button>
         </div>
+        <span class="muted" id="items-summary" style="font-size:.85rem"></span>
       </div>
       <div id="items-content"></div>
     </div>
 
     <!-- OCENY -->
     <div class="view hidden" data-view="grades">
-      <div class="toolbar">
-        <select id="grades-child" class="select"></select>
-        <span class="muted" id="grades-summary"></span>
-      </div>
+      <div class="chips" id="grades-child"></div>
+      <p class="muted" id="grades-summary" style="margin:0 0 10px;font-size:.85rem"></p>
       <div id="grades-content"></div>
     </div>
 
