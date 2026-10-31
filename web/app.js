@@ -322,6 +322,7 @@
     const push = (k, x) => { if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(x); };
     for (const e of S.events) push(dateKey(e.starts_at), { kind: 'event', when: new Date(e.starts_at), e });
     for (const t of S.tasks) if (t.due_at && t.status !== 'done' && !t.auto) push(dateKey(t.due_at), { kind: 'task', when: new Date(t.due_at), t });
+    for (const i of S.items) if (i.kind === 'message' && i.occurred_at && TEST_RE.test(i.title)) push(dateKey(i.occurred_at), { kind: 'item', when: new Date(i.occurred_at), i });
     let h = '<div class="month">' + ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'].map(d => `<div class="dow">${d}</div>`).join('');
     for (let i = 0; i < 42; i++) {
       const d = addDays(gridStart, i); const k = dateKey(d);
@@ -331,6 +332,7 @@
       const max = 3;
       h += `<div class="${cls}" data-day="${k}"><div class="dn">${d.getDate()}</div>` + list.slice(0, max).map(x => {
         if (x.kind === 'task') return `<div class="pill task" title="${esc(x.t.title)}">☑ ${esc(x.t.title)}</div>`;
+        if (x.kind === 'item') { const c = child(x.i.child_id); return `<div class="pill test" style="background:${c ? c.color : '#64748b'}" title="${esc(x.i.title)}">${esc(x.i.title)}</div>`; }
         const c = child(x.e.child_id); const isTest = x.e.source !== 'manual' && TEST_RE.test(x.e.title);
         return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(x.e.title)}">${esc(x.e.title)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
@@ -343,7 +345,7 @@
     const sel = new Date(S.calSel + 'T12:00:00');
     const list = (byDay.get(S.calSel) || []).sort((a, b) => a.when - b.when);
     const dd = $('#calendar-day');
-    dd.innerHTML = `<div class="day-detail">${dayHead(sel)}` + (list.length ? list.map(x => x.kind === 'task' ? taskCard(x.t) : eventCard(x.e)).join('') : `<div class="muted" style="padding:4px 0 10px 4px;font-size:.9rem">Nic zaplanowanego.</div>`) + `<button class="btn sm" data-act="add-event" data-day="${S.calSel}">+ Wydarzenie tego dnia</button></div>`;
+    dd.innerHTML = `<div class="day-detail">${dayHead(sel)}` + (list.length ? list.map(x => x.kind === 'task' ? taskCard(x.t) : x.kind === 'item' ? itemCard(x.i) : eventCard(x.e)).join('') : `<div class="muted" style="padding:4px 0 10px 4px;font-size:.9rem">Nic zaplanowanego.</div>`) + `<button class="btn sm" data-act="add-event" data-day="${S.calSel}">+ Wydarzenie tego dnia</button></div>`;
     wireCards(dd);
   }
 

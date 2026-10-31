@@ -25,6 +25,10 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 
 from .base import Source, Item, Event
+from .dates_pl import extract_date
+
+import re
+TEST_RE = re.compile(r"sprawdzian|kartk[óo]wk|dyktand|praca klasowa|klas[óo]wk|\btest\b|egzamin", re.I)
 
 log = logging.getLogger("worker.librus")
 
@@ -204,11 +208,12 @@ class LibrusSource(Source):
                                     raw = {"attachments": files}
                         except Exception as e:
                             log.warning("Librus wiadomość %s: pełna treść/załączniki nieudane (%s) — zapisuję podgląd", m.id, e)
+                        topic = _clean(m.topic, 300) or "(bez tematu)"
+                        occurred = extract_date(f"{topic}\n{body or ''}", sent) if TEST_RE.search(f"{topic} {body or ''}") else None
                         items.append(Item(
                             source="librus", external_id=ext, kind="message",
-                            title=_clean(m.topic, 300) or "(bez tematu)",
-                            body=body, sender=m.sender_name or None,
-                            published_at=sent, child_name=child,
+                            title=topic, body=body, sender=m.sender_name or None,
+                            published_at=sent, occurred_at=occurred, child_name=child,
                             url=f"{LIBRUS_URL}/wiadomosci", raw=raw,
                         ))
                 except Exception as e:  # jedna sekcja nie może położyć reszty
@@ -323,5 +328,29 @@ class LibrusSource(Source):
         except LibrusServerMaintenanceError:
             raise RuntimeError("Librus: przerwa techniczna (503), spróbuję przy następnym uruchomieniu")
 
+        self._backfill_message_dates()
         log.info("Librus: wpisy=%d (wiad./ogł./zad./term./oceny), wydarzenia=%d", len(items), len(events))
         return items, events
+
+    def _backfill_message_dates(self) -> None:
+        """Wiadomości już w bazie, o sprawdzianach, bez terminu -> dopisz termin z treści."""
+        if not self.store:
+            return
+        try:
+            rows = (self.store.sb.table("items").select("id,title,body,published_at")
+                    .eq("source", "librus").eq("kind", "message").is_("occurred_at", "null")
+                    .order("published_at", desc=True).limit(200).execute().data or [])
+            n = 0
+            for r in rows:
+                text = f"{r.get('title') or ''}\n{r.get('body') or ''}"
+                if not TEST_RE.search(text):
+                    continue
+                ref = _dt(r.get("published_at"))
+                d = extract_date(text, ref)
+                if d:
+                    self.store.sb.table("items").update({"occurred_at": d.isoformat()}).eq("id", r["id"]).execute()
+                    n += 1
+            if n:
+                log.info("Librus: uzupełniono termin z treści w %d wiadomościach o sprawdzianach", n)
+        except Exception as e:
+            log.warning("Librus: uzupełnianie terminów nieudane: %s", e)
