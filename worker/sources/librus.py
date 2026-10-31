@@ -34,7 +34,7 @@ log = logging.getLogger("worker.librus")
 
 SESSION_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "librus_session.json")
 MESSAGES_LIMIT = 40
-GRADES_DAYS = 60          # oceny starsze niż tyle dni pomijamy (żeby nie zalać wpisów przy pierwszym uruchomieniu)
+GRADES_DAYS = 400         # bierzemy cały rok szkolny
 LIBRUS_URL = "https://synergia.librus.pl"
 
 
@@ -295,10 +295,10 @@ class LibrusSource(Source):
                 except Exception as e:
                     log.warning("Librus terminarz: %s", e)
 
-                # --- oceny (tylko z ostatnich GRADES_DAYS dni)
+                # --- oceny bieżące (1-6)
+                cutoff = datetime.now().astimezone() - timedelta(days=GRADES_DAYS)
                 try:
                     gcats = await lib.grade_categories()
-                    cutoff = datetime.now().astimezone() - timedelta(days=GRADES_DAYS)
                     for g in await lib.grades():
                         added = _dt(g.add_date)
                         if added and added < cutoff:
@@ -306,6 +306,7 @@ class LibrusSource(Source):
                         subj = subjects.get(g.subject_id, "Ocena") if g.subject_id is not None else "Ocena"
                         gc = gcats.get(g.category_id) if g.category_id is not None else None
                         cat_name = gc.name if gc else ""
+                        weight = gc.weight if gc else None
                         kind_note = " (propozycja semestralna)" if g.is_semester_proposition else \
                                     " (propozycja końcowa)" if g.is_final_proposition else \
                                     " (semestralna)" if g.is_semester else " (końcowa)" if g.is_final else ""
@@ -315,9 +316,57 @@ class LibrusSource(Source):
                             title=f"{subj}: {g.value}{kind_note}"[:300],
                             body=_clean("\n".join(body_parts)),
                             published_at=added, child_name=child, url=f"{LIBRUS_URL}/oceny",
+                            raw={"grade_type": "standard", "category": cat_name or None, "weight": weight,
+                                 "counts": bool(gc.count_to_average) if gc else None, "semester": g.semester},
                         ))
                 except Exception as e:
                     log.warning("Librus oceny: %s", e)
+
+                # --- oceny bieżące opisowe (klasy 1-3: umiejętności, np. muzyka, j. angielski)
+                try:
+                    for g in await lib.descriptive_grades():
+                        added = _dt(g.add_date) or _dt(g.date)
+                        if added and added < cutoff:
+                            continue
+                        subj = subjects.get(g.subject_id, "Ocena opisowa") if g.subject_id is not None else "Ocena opisowa"
+                        body_parts = [p for p in ([g.skill] if g.skill else []) + list(g.comments) + list(g.requirements) if p]
+                        items.append(Item(
+                            source="librus", external_id=f"dgrade-{g.id}", kind="grade",
+                            title=f"{subj}: {g.value}"[:300],
+                            body=_clean("\n".join(body_parts)),
+                            published_at=added, child_name=child, url=f"{LIBRUS_URL}/oceny",
+                            raw={"grade_type": "descriptive", "skill": g.skill, "semester": g.semester},
+                        ))
+                except Exception as e:
+                    log.warning("Librus oceny opisowe: %s", e)
+
+                # --- oceny tekstowe i punktowe (jeśli szkoła ich używa)
+                try:
+                    for g in await lib.text_grades():
+                        added = _dt(g.add_date) or _dt(g.date)
+                        if added and added < cutoff:
+                            continue
+                        subj = subjects.get(g.subject_id, "Ocena") if g.subject_id is not None else "Ocena"
+                        items.append(Item(
+                            source="librus", external_id=f"tgrade-{g.id}", kind="grade",
+                            title=f"{subj}: {g.value}"[:300], body=_clean(g.category),
+                            published_at=added, child_name=child, url=f"{LIBRUS_URL}/oceny",
+                            raw={"grade_type": "text", "category": g.category, "semester": g.semester},
+                        ))
+                except Exception as e:
+                    log.warning("Librus oceny tekstowe: %s", e)
+                try:
+                    for g in await lib.point_grades():
+                        subj = subjects.get(g.subject_id, "Ocena") if g.subject_id is not None else "Ocena"
+                        items.append(Item(
+                            source="librus", external_id=f"pgrade-{g.id}", kind="grade",
+                            title=f"{subj}: {g.value}"[:300],
+                            body=_clean(f"{g.category or ''}\n{g.points}/{g.max_points} pkt" if g.points is not None else (g.category or "")),
+                            child_name=child, url=f"{LIBRUS_URL}/oceny",
+                            raw={"grade_type": "points", "category": g.category, "weight": g.weight, "counts": g.counts_to_average, "semester": g.semester},
+                        ))
+                except Exception as e:
+                    log.warning("Librus oceny punktowe: %s", e)
 
         except LibrusInvalidCredentialsError:
             raise RuntimeError("Librus: nieprawidłowy login lub hasło (sprawdź LIBRUS_LOGIN / LIBRUS_PASSWORD w .env)")
