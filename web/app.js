@@ -359,11 +359,13 @@
       const max = 4;
       h += `<div class="${cls}" data-day="${k}"><div class="dn">${d.getDate()}</div>` + list.slice(0, max).map(x => {
         const obj = x.kind === 'item' ? x.i : x.e; const c = child(obj.child_id); const isTest = x.ck === 'test';
-        const label = (isTest ? '❗' : x.ck === 'homework' ? '📚 ' : '') + obj.title.replace(/^[^:·]*·\s*/, '');
-        return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${esc(label)}</div>`;
+        const trip = /wycieczk|wyjazd|wyjści|kino|teatr|muzeum/i.test(obj.title);
+        const ico = isTest ? '<span class="pi">❗</span>' : x.ck === 'homework' ? '📚 ' : trip ? '🚗 ' : '';
+        const label = obj.title.replace(/^[^:·]*·\s*/, '');
+        return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${ico}${esc(label)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
     }
-    h += '</div><div class="cal-legend"><span>❗ sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>📣 inne</span><span>kolor = dziecko</span></div>';
+    h += '</div><div class="cal-legend"><span>❗ sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>🚗 wycieczka / wyjście</span><span>📣 inne</span><span>kolor = dziecko</span></div>';
     $('#calendar-content').innerHTML = h;
     $('#calendar-content').onclick = e => { const d = e.target.closest('[data-day]'); if (!d) return; S.calSel = d.dataset.day; render(); };
     $('#cal-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.calChild = b.dataset.child; render(); };

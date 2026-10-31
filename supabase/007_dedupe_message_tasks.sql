@@ -4,6 +4,7 @@ returns trigger language plpgsql security definer set search_path = public as $$
 declare kw text;
 begin
   if new.occurred_at is null or new.occurred_at < now() - interval '1 day' then return new; end if;
+  if exists (select 1 from public.tasks t where t.item_id = new.id) then return new; end if;
   if new.kind in ('homework', 'event') then
     insert into public.tasks (title, child_id, due_at, status, item_id, auto, notes)
     values (left(new.title, 300), new.child_id, new.occurred_at, 'todo', new.id, true, left(new.body, 500))
@@ -13,7 +14,7 @@ begin
     if kw is null then return new; end if;
     if exists (
       select 1 from public.tasks t
-      where t.auto and t.child_id is not distinct from new.child_id
+      where t.child_id is not distinct from new.child_id
         and t.due_at::date = new.occurred_at::date and t.title ilike '%' || kw || '%'
     ) then return new; end if;
     insert into public.tasks (title, child_id, due_at, status, item_id, auto, notes)

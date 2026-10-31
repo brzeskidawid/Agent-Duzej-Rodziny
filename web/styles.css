@@ -199,6 +199,7 @@ form textarea{min-height:80px;resize:vertical}
 .month .day.today .dn{color:#0ea5e9}
 .month .pill{font-size:.72rem;line-height:1.25;padding:3px 6px;border-radius:5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
 .month .pill.test{font-weight:700}
+.month .pill .pi{font-size:.6em;vertical-align:1px;margin-right:2px}
 .month .pill.task{background:transparent !important;color:var(--ink);border:1px dashed var(--muted)}
 .month .more{font-size:.66rem;color:var(--muted);padding-left:3px}
 @media(max-width:639px){
