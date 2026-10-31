@@ -133,7 +133,7 @@ form textarea{min-height:80px;resize:vertical}
 .chips button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .chips button .dot{width:10px;height:10px}
 .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
-@media(min-width:640px){.tiles{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:640px){.tiles{grid-template-columns:repeat(5,1fr)}}
 .tile{position:relative;border:1px solid var(--line);background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 12px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;transition:.15s}
 .tile .ico{font-size:1.3rem}
 .tile .lbl{font-weight:600}
@@ -180,3 +180,7 @@ form textarea{min-height:80px;resize:vertical}
 .backlog .card{margin:0}
 .backlog .card{flex-wrap:wrap}
 .backlog .card .actions{flex-basis:100%;flex-direction:row;justify-content:flex-end;gap:6px;padding-left:34px}
+
+.tile.archive{opacity:.8;border-style:dashed}
+@media(max-width:639px){.tile.archive{grid-column:1/-1;flex-direction:row;align-items:center;gap:10px;padding:10px 12px}}
+.tile.archive.on{opacity:1}

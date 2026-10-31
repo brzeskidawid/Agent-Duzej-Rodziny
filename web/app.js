@@ -238,14 +238,16 @@
       b.classList.toggle('on', b.dataset.k === S.itemsKind);
       const all = S.items.filter(i => kindMatch(i, b.dataset.k) && (!S.itemsChild || i.child_id === S.itemsChild));
       const nw = all.filter(i => !S.reads.has(i.id)).length;
-      const c = b.querySelector('.cnt'); c.textContent = nw ? `${nw} nowe` : (all.length ? `${all.length}` : '—'); c.classList.toggle('new', nw > 0);
+      const c = b.querySelector('.cnt');
+      if (b.dataset.k === 'archive') { c.textContent = all.length ? `${all.length}` : '—'; c.classList.remove('new'); }
+      else { c.textContent = nw ? `${nw} nowe` : (all.length ? `${all.length}` : '—'); c.classList.toggle('new', nw > 0); }
     });
     ({ today: renderToday, calendar: renderCalendar, tasks: renderTasks, items: renderItems, grades: renderGrades, chat: renderChat })[S.view]();
   }
 
   function renderBadges() {
     const myOpen = S.tasks.filter(t => t.status !== 'done' && t.assignee === S.me.user_id).length;
-    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade').length;
+    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i)).length;
     const unreadGrades = S.items.filter(i => !S.reads.has(i.id) && i.kind === 'grade').length;
     $('#badge-grades').textContent = unreadGrades || '';
     const newChat = S.messages.filter(m => m.sender !== S.me.user_id && new Date(m.created_at).getTime() > S.lastChatSeen).length;
@@ -275,7 +277,7 @@
     const overdue = myTasks.filter(t => t.due_at && new Date(t.due_at) < todayStart);
     const dueSoon = myTasks.filter(t => !t.due_at || (new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7));
     const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7);
-    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade').slice(0, 8);
+    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i)).slice(0, 8);
     const greeting = now.getHours() < 12 ? 'Dzień dobry' : now.getHours() < 18 ? 'Cześć' : 'Dobry wieczór';
 
     let h = `<h2>${greeting}, ${esc(S.me.display_name)}</h2><p class="muted">${DAYS[now.getDay()]}, ${fmtDate(now)}</p>`;
@@ -368,7 +370,14 @@
   }
 
   // ---- WPISY
+  function isArchived(i) {
+    if (!i.occurred_at) return false;
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    return new Date(i.occurred_at) < t0;
+  }
   function kindMatch(i, k) {
+    if (k === 'archive') return i.kind !== 'grade' && isArchived(i);
+    if (i.kind !== 'grade' && isArchived(i)) return false;
     if (!k) return i.kind !== 'grade';
     if (k === 'message') return i.kind === 'message' && !TEST_RE.test(i.title);
     if (k === 'homework') return i.kind === 'homework' || (i.kind === 'event' && HOMEWORK_RE.test(i.sender || ''));
@@ -382,13 +391,16 @@
     if (S.itemsFilter === 'unread') list = list.filter(i => !S.reads.has(i.id));
     if (S.itemsChild) list = list.filter(i => i.child_id === S.itemsChild);
     let html;
-    if (S.itemsKind === 'test') {
+    if (S.itemsKind === 'archive') {
+      list = list.sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
+      html = list.length ? groupByDay(list.map(i => ({ when: new Date(i.occurred_at), html: itemCard(i) }))) : `<div class="empty">Archiwum puste.</div>`;
+    } else if (S.itemsKind === 'test') {
       // sprawdziany: nadchodzące od najbliższego, potem minione
       const now = Date.now();
       const up = list.filter(i => i.occurred_at && new Date(i.occurred_at) >= now).sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
       const past = list.filter(i => !i.occurred_at || new Date(i.occurred_at) < now).sort((a, b) => new Date(b.occurred_at || 0) - new Date(a.occurred_at || 0));
       html = (up.length ? `<div class="section-title">Nadchodzące</div>` + groupByDay(up.map(i => ({ when: new Date(i.occurred_at), html: itemCard(i) }))) : `<div class="empty">Brak zaplanowanych sprawdzianów 🎉</div>`)
-        + (past.length ? `<div class="section-title">Minione</div>` + past.map(itemCard).join('') : '');
+        + (past.length ? `<div class="section-title">Bez terminu</div>` + past.map(itemCard).join('') : '');
     } else {
       html = list.length ? list.map(itemCard).join('')
         : `<div class="empty">${S.items.length ? (S.itemsFilter === 'unread' ? 'Brak nowych wpisów ✓' : 'Brak wpisów w tej kategorii.') : 'Jeszcze nie ma żadnych wpisów. Pojawią się tu, gdy uruchomisz workera (Librus / 4Parents) albo dodasz wpis ręcznie.'}</div>`;
