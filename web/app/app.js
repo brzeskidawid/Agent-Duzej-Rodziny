@@ -531,17 +531,21 @@
 
   // ---- CZAT
   const EMOJI = ['😀','😁','😂','🤣','🙂','😉','😍','🥰','😘','😎','🤔','😴','🙃','😇','🤗','👍','👎','👏','🙏','💪','🤝','✌️','🫶','❤️','💔','🔥','✨','🎉','🎂','🍕','☕','🍺','🏃','⚽','🎸','🚗','🏠','🧸','📚','✏️','🎒','⏰','✅','❌','❗','❓','💬','😅','😭','🤯','🤪','🥳','😱','🤷','🤦'];
-  const IMG_RE = /(https?:\/\/\S+?\.(?:gif|png|jpe?g|webp)(?:\?\S*)?)/i;
-  const GIF_HOST_RE = /^(https?:\/\/(?:media\d*\.giphy\.com|i\.giphy\.com|media\.tenor\.com|c\.tenor\.com)\/\S+)$/i;
   const URL_RE = /(https?:\/\/[^\s<]+)/g;
+  const IMG_EXT_RE = /\.(?:png|jpe?g|gif|webp|heic|bmp)$/i;
   const mediaUrls = new Map();
 
   function chatBodyHtml(body) {
-    const m = body.match(IMG_RE) || body.match(GIF_HOST_RE);
-    if (m && body.trim() === m[1]) return `<img src="${esc(m[1])}" alt="" loading="lazy">`;
-    let h = esc(body).replace(URL_RE, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
-    if (m) h += `<img src="${esc(m[1])}" alt="" loading="lazy">`;
-    return h;
+    return esc(body).replace(URL_RE, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+  }
+
+  function mediaHtml(m) {
+    if (!m.media_path) return '';
+    const url = mediaUrls.get(m.media_path);
+    const name = m.media_name || 'załącznik';
+    if (!url) return '<div class="muted" style="font-size:.78rem">ładowanie załącznika…</div>';
+    return IMG_EXT_RE.test(name) ? `<img src="${esc(url)}" alt="${esc(name)}" loading="lazy">`
+      : `<a class="file" href="${esc(url)}" target="_blank" rel="noopener">📄 ${esc(name)}</a>`;
   }
 
   async function signMedia(paths) {
@@ -559,7 +563,7 @@
       const d = new Date(m.created_at); const k = dateKey(d);
       if (k !== lastDay) { lastDay = k; h += `<div class="muted" style="text-align:center;font-size:.75rem;margin:10px 0 4px">${isToday(d) ? 'Dziś' : fmtDate(d)}</div>`; }
       const me = m.sender === S.me.user_id;
-      const media = m.media_path ? (mediaUrls.has(m.media_path) ? `<img src="${esc(mediaUrls.get(m.media_path))}" alt="" loading="lazy">` : '<div class="muted" style="font-size:.78rem">ładowanie obrazka…</div>') : '';
+      const media = mediaHtml(m);
       h += `<div class="msg ${me ? 'me' : ''}">${me ? `<button class="del" data-del="${m.id}" title="Usuń">✕</button>` : ''}${media}${m.body ? chatBodyHtml(m.body) : ''}<span class="t">${me ? '' : esc(member(m.sender)?.display_name || '') + ' · '}${fmtTime(d)}</span></div>`;
     }
     log.innerHTML = h || `<div class="empty">Napiszcie do siebie coś miłego 🙂</div>`;
@@ -581,14 +585,14 @@
 
   async function sendChatImage(file) {
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) return toast('Plik za duży (max 10 MB)');
-    const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (file.size > 20 * 1024 * 1024) return toast('Plik za duży (max 20 MB)');
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
     const path = `chat/${crypto.randomUUID()}.${ext}`;
-    toast('Wysyłam obrazek…');
+    toast('Wysyłam załącznik…');
     const { error: upErr } = await sb.storage.from('attachments').upload(path, file, { contentType: file.type, upsert: false });
     if (upErr) return fail(upErr);
     const body = $('#chat-input').value.trim(); $('#chat-input').value = '';
-    const { data, error } = await sb.from('messages').insert({ sender: S.me.user_id, body, media_path: path }).select().single();
+    const { data, error } = await sb.from('messages').insert({ sender: S.me.user_id, body, media_path: path, media_name: file.name.slice(0, 200) }).select().single();
     if (error) return fail(error);
     S.messages.push(data); render();
   }

@@ -245,6 +245,8 @@ form textarea{min-height:80px;resize:vertical}
 .msg.me .del{display:flex}
 .msg.me:hover .del,.msg.me:focus-within .del{opacity:1}
 .msg a{color:inherit;text-decoration:underline}
-.chat-form .icon-btn{flex:0 0 auto;font-size:1.25rem}
+.chat-form .icon-btn{flex:0 0 auto;font-size:1.15rem;padding:6px}
+.chat-form .icon-btn svg{display:block}
+.msg a.file{display:inline-block;padding:6px 10px;border-radius:8px;background:rgba(127,127,127,.18);text-decoration:none;font-size:.9rem;margin:2px 0}
 #chat-file{display:none !important}
 .chat-log{padding-bottom:84px}

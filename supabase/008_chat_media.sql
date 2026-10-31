@@ -8,3 +8,4 @@ create policy attachments_family_write on storage.objects
 drop policy if exists attachments_family_delete on storage.objects;
 create policy attachments_family_delete on storage.objects
   for delete using (bucket_id = 'attachments' and public.is_family_member());
+alter table public.messages add column if not exists media_name text;
