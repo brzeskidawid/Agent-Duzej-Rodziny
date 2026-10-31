@@ -70,6 +70,7 @@ form textarea{min-height:80px;resize:vertical}
 .card .actions{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
 .card.clickable{cursor:pointer}
 .card.unread{outline:1px solid color-mix(in srgb,var(--line),var(--ink) 20%)}
+.chip.unread{outline:2px solid var(--danger)}
 .check{width:22px;height:22px;border-radius:50%;border:2px solid var(--muted);background:transparent;cursor:pointer;flex-shrink:0;margin-top:2px}
 .check.on{background:var(--ok);border-color:var(--ok);color:#fff;font-size:.8rem;display:grid;place-items:center}
 .chip{display:inline-flex;align-items:center;gap:5px;font-size:.75rem;padding:2px 8px;border-radius:999px;background:var(--line)}

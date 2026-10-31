@@ -26,6 +26,7 @@
     taskFilter: 'open',
     itemsFilter: 'unread',
     itemsChild: '',
+    itemsKind: '',
     calStart: startOfWeek(new Date()),
     lastChatSeen: (() => { try { return Number(localStorage.getItem('adr_lastChatSeen') || 0); } catch (e) { return 0; } })(),
   };
@@ -146,6 +147,7 @@
     $$('#task-filter button').forEach(b => b.onclick = () => { S.taskFilter = b.dataset.f; render(); });
     $$('#items-filter button').forEach(b => b.onclick = () => { S.itemsFilter = b.dataset.f; render(); });
     $('#items-child').onchange = e => { S.itemsChild = e.target.value; render(); };
+    $('#items-kind').onchange = e => { S.itemsKind = e.target.value; render(); };
 
     $('#chat-form').onsubmit = async e => {
       e.preventDefault();
@@ -176,6 +178,8 @@
   function render() {
     renderBadges();
     renderChildSelect();
+    $$('#task-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === S.taskFilter));
+    $$('#items-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === S.itemsFilter));
     ({ today: renderToday, calendar: renderCalendar, tasks: renderTasks, items: renderItems, chat: renderChat })[S.view]();
   }
 
@@ -266,11 +270,43 @@
   // ---- WPISY
   function renderItems() {
     let list = S.items;
+    if (S.itemsKind) list = list.filter(i => i.kind === S.itemsKind);
     if (S.itemsFilter === 'unread') list = list.filter(i => !S.reads.has(i.id));
     if (S.itemsChild) list = list.filter(i => i.child_id === S.itemsChild);
-    $('#items-content').innerHTML = list.length ? list.map(itemCard).join('')
+    let html;
+    if (S.itemsKind === 'grade' && list.length) html = gradesBySubject(list);
+    else html = list.length ? list.map(itemCard).join('')
       : `<div class="empty">${S.items.length ? 'Wszystko przeczytane ✓' : 'Jeszcze nie ma żadnych wpisów. Pojawią się tu, gdy uruchomisz workera (Librus / 4Parents) albo dodasz wpis ręcznie.'}</div>`;
+    $('#items-content').innerHTML = html;
     wireCards($('#items-content'));
+  }
+
+  // Oceny: grupowanie dziecko → przedmiot (tytuł wpisu ma postać "Przedmiot: ocena")
+  function gradesBySubject(list) {
+    const byChild = new Map();
+    for (const i of list) {
+      const idx = i.title.indexOf(':');
+      const subject = idx > 0 ? i.title.slice(0, idx).trim() : 'Inne';
+      const value = idx > 0 ? i.title.slice(idx + 1).trim() : i.title;
+      const ck = i.child_id || '';
+      if (!byChild.has(ck)) byChild.set(ck, new Map());
+      const bySubj = byChild.get(ck);
+      if (!bySubj.has(subject)) bySubj.set(subject, []);
+      bySubj.get(subject).push({ i, value });
+    }
+    let h = '';
+    for (const [ck, bySubj] of byChild) {
+      const c = child(ck);
+      h += `<div class="day-head"><span class="d" style="color:${c ? c.color : 'inherit'}">${c ? esc(c.name) : 'Bez dziecka'}</span><span class="w">${[...bySubj.values()].reduce((n, a) => n + a.length, 0)} ocen</span></div>`;
+      for (const [subject, arr] of [...bySubj].sort((a, b) => a[0].localeCompare(b[0], 'pl'))) {
+        h += `<div class="card" style="border-left-color:${c ? c.color : 'var(--line)'};flex-direction:column;gap:6px">
+          <div class="title">${esc(subject)}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${arr.map(({ i, value }) =>
+            `<button class="chip clickable ${S.reads.has(i.id) ? '' : 'unread'}" data-grade="${i.id}" title="${esc(fmtDate(i.published_at))}${i.body ? ' · ' + esc(i.body.split('\n')[0]) : ''}" style="font-size:.95rem;font-weight:600;padding:4px 10px;border:0;cursor:pointer">${esc(value)}</button>`).join('')}</div>
+        </div>`;
+      }
+    }
+    return h;
   }
 
   // ---- CZAT
@@ -327,6 +363,8 @@
 
   function wireCards(root) {
     root.onclick = async e => {
+      const g = e.target.closest('[data-grade]');
+      if (g) return openItem(S.items.find(x => x.id === g.dataset.grade));
       const btn = e.target.closest('[data-act]'); if (!btn) return;
       const act = btn.dataset.act;
       const card = btn.closest('.card');
@@ -357,6 +395,7 @@
     openModal(esc(i.title), `
       <div class="meta muted" style="margin-bottom:10px">${childChip(i.child_id)} ${KIND_LABEL[i.kind] || i.kind} · ${SOURCE_LABEL[i.source] || i.source}${i.sender ? ' · od: ' + esc(i.sender) : ''}<br>${fmtDateTime(i.published_at)}${i.occurred_at ? ' · termin: ' + fmtDate(i.occurred_at) : ''}</div>
       <div class="body" style="white-space:pre-wrap">${esc(i.body || '(brak treści)')}</div>
+      ${attachmentsHtml(i)}
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         <button class="btn sm" id="m-totask">→ zadanie</button>
         <button class="btn sm" id="m-toevent">→ wydarzenie</button>
@@ -364,9 +403,25 @@
         ${i.source === 'manual' ? `<button class="btn sm danger" id="m-del">Usuń</button>` : ''}
       </div>`);
     render();
+    $$('#modal-body [data-att]').forEach(b => b.onclick = () => openAttachment(b.dataset.att, b));
     $('#m-totask').onclick = () => openTaskForm({ title: i.title, child_id: i.child_id, due_at: i.occurred_at, item_id: i.id, notes: (i.body || '').slice(0, 300) });
     $('#m-toevent').onclick = () => openEventForm({ title: i.title, child_id: i.child_id, starts_at: i.occurred_at || new Date().toISOString(), item_id: i.id, notes: (i.body || '').slice(0, 300) });
     const del = $('#m-del'); if (del) del.onclick = async () => { if (!confirm('Usunąć wpis?')) return; const { error } = await sb.from('items').delete().eq('id', i.id); if (error) return fail(error); S.items = S.items.filter(x => x.id !== i.id); closeModal(); render(); };
+  }
+
+  function attachmentsHtml(i) {
+    const files = (i.raw && Array.isArray(i.raw.attachments)) ? i.raw.attachments : [];
+    if (!files.length) return '';
+    return `<div class="section-title" style="margin-top:14px">Załączniki</div><ul class="list-plain">${files.map(f =>
+      `<li><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">📎 ${esc(f.name)}</span><button class="btn sm" data-att="${esc(f.path)}">Otwórz</button></li>`).join('')}</ul>`;
+  }
+
+  async function openAttachment(path, btn) {
+    btn.disabled = true; btn.textContent = '…';
+    const { data, error } = await sb.storage.from('attachments').createSignedUrl(path, 3600);
+    btn.disabled = false; btn.textContent = 'Otwórz';
+    if (error || !data?.signedUrl) return fail(error || 'Nie udało się pobrać pliku');
+    window.open(data.signedUrl, '_blank', 'noopener');
   }
 
   // -------------------------------------------------------------- forms

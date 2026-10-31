@@ -69,6 +69,26 @@ class Store:
             log.warning("Nie znaleziono dziecka '%s' w aplikacji — wpis trafi bez przypisania", name)
         return cid
 
+    def existing_ids(self, source: str, external_ids: list[str]) -> set[str]:
+        """Które z podanych external_id już są w bazie (żeby nie pobierać ponownie treści/załączników)."""
+        found: set[str] = set()
+        for i in range(0, len(external_ids), 200):
+            chunk = external_ids[i:i + 200]
+            rows = self.sb.table("items").select("external_id").eq("source", source).in_("external_id", chunk).execute().data or []
+            found.update(r["external_id"] for r in rows)
+        return found
+
+    def upload_file(self, path: str, content: bytes, content_type: str | None) -> str | None:
+        """Zapisuje plik w buckecie 'attachments'. Zwraca ścieżkę lub None przy błędzie."""
+        try:
+            self.sb.storage.from_("attachments").upload(
+                path, content, {"content-type": content_type or "application/octet-stream", "upsert": "true"},
+            )
+            return path
+        except Exception as e:
+            log.warning("Nie udało się zapisać załącznika %s: %s", path, e)
+            return None
+
     def upsert_items(self, items: list[Item]) -> int:
         rows = []
         for it in items:
@@ -111,6 +131,7 @@ def _iso(d: datetime | None) -> str | None:
 def run_once(store: Store, sources: list[Source]) -> None:
     for src in sources:
         t0 = time.time()
+        src.store = store  # dostęp do bazy/magazynu plików (deduplikacja, załączniki)
         try:
             items, events = src.fetch()
             n_i = store.upsert_items(items)

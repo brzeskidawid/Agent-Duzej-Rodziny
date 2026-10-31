@@ -34,8 +34,10 @@ class Event:
 
 
 class Source:
-    """Klasa bazowa. Implementacja musi nadpisać `name` i `fetch()`."""
+    """Klasa bazowa. Implementacja musi nadpisać `name` i `fetch()`.
+    `store` ustawia worker przed fetch(): daje existing_ids() i upload_file()."""
     name: str = "base"
+    store: Any = None
 
     def fetch(self) -> tuple[list[Item], list[Event]]:
         raise NotImplementedError

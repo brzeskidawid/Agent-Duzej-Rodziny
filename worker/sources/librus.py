@@ -64,6 +64,14 @@ def _dt_time(date_s: str | None, time_s: str | None) -> datetime | None:
     return d
 
 
+def _safe_name(name: str) -> str:
+    """Nazwa pliku bezpieczna dla ścieżki w magazynie (bez polskich znaków i dziwnych symboli)."""
+    import re, unicodedata
+    n = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    n = re.sub(r"[^A-Za-z0-9._-]+", "_", n).strip("._") or "plik"
+    return n[:120]
+
+
 def _clean(text: str | None, limit: int = 4000) -> str | None:
     if not text:
         return None
@@ -101,6 +109,21 @@ class LibrusSource(Source):
         except OSError as e:
             log.warning("Nie udało się zapisać sesji Librusa: %s", e)
 
+    # ------------------------------------------------------------------ załączniki
+    async def _save_attachment(self, folder: str, filename: str | None, download) -> str | None:
+        """Pobiera plik z Librusa i zapisuje w magazynie Supabase. Zwraca ścieżkę lub None."""
+        if not self.store:
+            return None
+        try:
+            f = await download()
+            if f is None:
+                return None
+            name = _safe_name(filename or f.filename or "zalacznik")
+            return self.store.upload_file(f"{folder}/{name}", f.content, f.content_type)
+        except Exception as e:
+            log.warning("Załącznik %s: %s", filename, e)
+            return None
+
     # ------------------------------------------------------------------ fetch
     async def _fetch_async(self) -> tuple[list[Item], list[Event]]:
         from librus_synergia import (
@@ -124,15 +147,37 @@ class LibrusSource(Source):
                 subjects = await lib.subjects()
                 teachers = await lib.teachers()
 
-                # --- wiadomości
+                # --- wiadomości (pełna treść + załączniki tylko dla NOWYCH; otwarcie oznacza w Librusie jako przeczytane)
                 try:
-                    for m in await lib.messages("inbox", limit=MESSAGES_LIMIT):
+                    previews = await lib.messages("inbox", limit=MESSAGES_LIMIT)
+                    known = self.store.existing_ids("librus", [f"msg-{m.id}" for m in previews]) if self.store else set()
+                    for m in previews:
+                        ext = f"msg-{m.id}"
+                        if ext in known:
+                            continue  # już w bazie — nie dotykamy (nie pobieramy ponownie)
+                        body, raw = _clean(m.content), None
+                        try:
+                            full = await lib.message(m.id, "inbox")
+                            if full:
+                                body = _clean(full.content) or body
+                                files = []
+                                for att in full.attachments:
+                                    path = await self._save_attachment(
+                                        f"librus/{ext}", att.filename,
+                                        lambda: lib.download_attachment(att.id, m.id),
+                                    )
+                                    if path:
+                                        files.append({"name": att.filename or "załącznik", "path": path})
+                                if files:
+                                    raw = {"attachments": files}
+                        except Exception as e:
+                            log.warning("Librus wiadomość %s: pełna treść/załączniki nieudane (%s) — zapisuję podgląd", m.id, e)
                         items.append(Item(
-                            source="librus", external_id=f"msg-{m.id}", kind="message",
+                            source="librus", external_id=ext, kind="message",
                             title=_clean(m.topic, 300) or "(bez tematu)",
-                            body=_clean(m.content), sender=m.sender_name or None,
+                            body=body, sender=m.sender_name or None,
                             published_at=_dt(m.send_date), child_name=child,
-                            url=f"{LIBRUS_URL}/wiadomosci",
+                            url=f"{LIBRUS_URL}/wiadomosci", raw=raw,
                         ))
                 except Exception as e:  # jedna sekcja nie może położyć reszty
                     log.warning("Librus wiadomości: %s", e)
@@ -151,24 +196,38 @@ class LibrusSource(Source):
                 except Exception as e:
                     log.warning("Librus ogłoszenia: %s", e)
 
-                # --- zadania domowe
+                # --- zadania domowe (+ załączniki dla nowych)
                 try:
-                    for h in await lib.homework():
+                    hws = await lib.homework()
+                    known = self.store.existing_ids("librus", [f"hw-{h.id}" for h in hws]) if self.store else set()
+                    for h in hws:
+                        ext = f"hw-{h.id}"
                         subj = ""
                         try:
-                            # lesson_id to nie subject_id; nazwę przedmiotu bierzemy jeśli się da
                             subj = subjects.get(h.lesson_id, "") if h.lesson_id is not None else ""
                         except Exception:
                             subj = ""
                         title = _clean(h.topic, 300) or "Zadanie domowe"
                         if subj:
                             title = f"{subj}: {title}"
+                        raw = None
+                        if ext not in known and h.attachments:
+                            files = []
+                            for att in h.attachments:
+                                path = await self._save_attachment(
+                                    f"librus/{ext}", att.filename,
+                                    lambda: lib.download_homework_attachment(att.id),
+                                )
+                                if path:
+                                    files.append({"name": att.filename or "załącznik", "path": path})
+                            if files:
+                                raw = {"attachments": files}
                         items.append(Item(
-                            source="librus", external_id=f"hw-{h.id}", kind="homework",
+                            source="librus", external_id=ext, kind="homework",
                             title=title, body=_clean(h.text),
                             sender=teachers.get(h.teacher_id) if h.teacher_id is not None else None,
                             occurred_at=_dt(h.due_date), published_at=_dt(h.date),
-                            child_name=child, url=f"{LIBRUS_URL}/zadania_domowe",
+                            child_name=child, url=f"{LIBRUS_URL}/zadania_domowe", raw=raw,
                         ))
                 except Exception as e:
                     log.warning("Librus zadania domowe: %s", e)
