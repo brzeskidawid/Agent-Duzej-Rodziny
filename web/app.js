@@ -30,6 +30,11 @@
     gradesChild: '',
     calMonth: startOfMonth(new Date()),
     calSel: dateKey(new Date()),
+    calChild: '',
+    calKind: '',
+    comments: [],
+    commentReads: new Set(),
+    openId: null,
     lastChatSeen: (() => { try { return Number(localStorage.getItem('adr_lastChatSeen') || 0); } catch (e) { return 0; } })(),
   };
 
@@ -74,6 +79,10 @@
     return m ? `<span class="chip"><span class="dot" style="background:${m.color}"></span>${esc(m.display_name)}</span>` : '<span class="chip">nieprzypisane</span>';
   }
   const isAssigned = t => !!t.assignee || !!t.child_assignee;
+  function mentionsMe(c) { return c.author !== S.me.user_id && new RegExp('@' + S.me.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(c.body); }
+  function unreadMentions() { return S.comments.filter(c => mentionsMe(c) && !S.commentReads.has(c.id)); }
+  function taskUnreadMentions(taskId) { return unreadMentions().filter(c => c.task_id === taskId).length; }
+  function fmtComment(body) { return esc(body).replace(/@([\p{L}]+)/gu, '<span class="m">@$1</span>'); }
 
   // -------------------------------------------------------------- auth
   async function boot() {
@@ -164,17 +173,20 @@
   // -------------------------------------------------------------- data
   async function loadAll() {
     const since = new Date(); since.setDate(since.getDate() - 60);
-    const [ch, ta, ev, it, rd, ms] = await Promise.all([
+    const [ch, ta, ev, it, rd, ms, tc, cr] = await Promise.all([
       sb.from('children').select('*').order('sort_order').order('name'),
       sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'),
       sb.from('events').select('*').order('starts_at'),
       sb.from('items').select('*').order('published_at', { ascending: false }).limit(300),
       sb.from('item_reads').select('item_id').eq('user_id', S.me.user_id),
       sb.from('messages').select('*').order('created_at', { ascending: false }).limit(200),
+      sb.from('task_comments').select('*').order('created_at'),
+      sb.from('comment_reads').select('comment_id').eq('user_id', S.me.user_id),
     ]);
     for (const r of [ch, ta, ev, it, rd, ms]) if (r.error) return fail(r.error);
     S.children = ch.data; S.tasks = ta.data; S.events = ev.data; S.items = it.data;
     S.reads = new Set(rd.data.map(r => r.item_id)); S.messages = ms.data.reverse();
+    S.comments = tc.error ? [] : tc.data; S.commentReads = new Set(cr.error ? [] : cr.data.map(r => r.comment_id));
   }
 
   function subscribeRealtime() {
@@ -182,6 +194,7 @@
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, p => { if (p.eventType === 'INSERT') { S.messages.push(p.new); if (S.view === 'chat') markChatSeen(); render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async () => { const { data } = await sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'); if (data) { S.tasks = data; render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => { const { data } = await sb.from('events').select('*').order('starts_at'); if (data) { S.events = data; render(); } })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, async () => { const { data } = await sb.from('task_comments').select('*').order('created_at'); if (data) { S.comments = data; if (S.openId) refreshComments(S.openId); render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, async () => { const { data } = await sb.from('items').select('*').order('published_at', { ascending: false }).limit(300); if (data) { S.items = data; render(); } })
       .subscribe();
   }
@@ -254,7 +267,8 @@
     const unreadGrades = S.items.filter(i => !S.reads.has(i.id) && i.kind === 'grade').length;
     $('#badge-grades').textContent = unreadGrades || '';
     const newChat = S.messages.filter(m => m.sender !== S.me.user_id && new Date(m.created_at).getTime() > S.lastChatSeen).length;
-    $('#badge-tasks').textContent = myOpen || '';
+    const mentions = unreadMentions().length;
+    $('#badge-tasks').textContent = (myOpen + mentions) || '';
     $('#badge-items').textContent = unread || '';
     $('#badge-chat').textContent = newChat || '';
   }
@@ -286,6 +300,8 @@
     let h = `<h2>${greeting}, ${esc(S.me.display_name)}</h2><p class="muted">${DAYS[now.getDay()]}, ${fmtDate(now)}</p>`;
     if (!S.children.length) h += `<div class="card"><div class="grow"><div class="title">Zacznij od dodania dzieci</div><div class="meta">Ustawienia (⚙) → Dzieci. Każde dziecko dostaje swój kolor.</div></div><div class="actions"><button class="btn sm" data-act="settings">Otwórz</button></div></div>`;
 
+    const um = unreadMentions();
+    if (um.length) h += `<div class="section-title">Wzmianki dla Ciebie</div>` + um.map(c => { const t = S.tasks.find(x => x.id === c.task_id); return t ? `<div class="card clickable" style="border-left-color:#0ea5e9" data-task="${t.id}"><div class="grow" data-act="edit-task"><div class="title">💬 ${esc(member(c.author)?.display_name || '')}: ${fmtComment(c.body)}</div><div class="meta"><span>w zadaniu: ${esc(t.title)}</span><span>${fmtDateTime(c.created_at)}</span></div></div></div>` : ''; }).join('');
     if (overdue.length) { h += `<div class="section-title">Po terminie</div>` + overdue.map(taskCard).join(''); }
     h += `<div class="section-title">Najbliższe 7 dni</div>`;
     const merged = [
@@ -320,32 +336,37 @@
     const todayKey = dateKey(new Date());
     const byDay = new Map();
     const push = (k, x) => { if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(x); };
-    for (const e of S.events) push(dateKey(e.starts_at), { kind: 'event', when: new Date(e.starts_at), e });
-    for (const t of S.tasks) if (t.due_at && t.status !== 'done' && !t.auto) push(dateKey(t.due_at), { kind: 'task', when: new Date(t.due_at), t });
-    for (const i of S.items) if (i.kind === 'message' && i.occurred_at && TEST_RE.test(i.title)) push(dateKey(i.occurred_at), { kind: 'item', when: new Date(i.occurred_at), i });
+    $('#cal-child').innerHTML = childChips(S.calChild, true);
+    $$('#cal-kind button').forEach(b => b.classList.toggle('on', b.dataset.k === S.calKind));
+    const calKindOf = (title, cat) => TEST_RE.test(cat + ' ' + title) ? 'test' : HOMEWORK_RE.test(cat) ? 'homework' : 'other';
+    const okChild = cid => !S.calChild || cid === S.calChild;
+    const okKind = k => !S.calKind || k === S.calKind;
+    for (const e of S.events) { const k = calKindOf(e.title, ''); if (okChild(e.child_id) && okKind(k)) push(dateKey(e.starts_at), { kind: 'event', ck: k, when: new Date(e.starts_at), e }); }
+    for (const i of S.items) if (i.kind === 'message' && i.occurred_at && TEST_RE.test(i.title) && okChild(i.child_id) && okKind('test')) push(dateKey(i.occurred_at), { kind: 'item', ck: 'test', when: new Date(i.occurred_at), i });
     let h = '<div class="month">' + ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'].map(d => `<div class="dow">${d}</div>`).join('');
     for (let i = 0; i < 42; i++) {
       const d = addDays(gridStart, i); const k = dateKey(d);
       if (i >= 35 && d.getMonth() !== m0.getMonth()) break;
       const list = (byDay.get(k) || []).sort((a, b) => a.when - b.when);
       const cls = ['day', d.getMonth() !== m0.getMonth() ? 'other' : '', k === todayKey ? 'today' : '', k === S.calSel ? 'sel' : '', d.getDay() === 0 || d.getDay() === 6 ? 'weekend' : ''].join(' ');
-      const max = 3;
+      const max = 4;
       h += `<div class="${cls}" data-day="${k}"><div class="dn">${d.getDate()}</div>` + list.slice(0, max).map(x => {
-        if (x.kind === 'task') return `<div class="pill task" title="${esc(x.t.title)}">☑ ${esc(x.t.title)}</div>`;
-        if (x.kind === 'item') { const c = child(x.i.child_id); return `<div class="pill test" style="background:${c ? c.color : '#64748b'}" title="${esc(x.i.title)}">${esc(x.i.title)}</div>`; }
-        const c = child(x.e.child_id); const isTest = x.e.source !== 'manual' && TEST_RE.test(x.e.title);
-        return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(x.e.title)}">${esc(x.e.title)}</div>`;
+        const obj = x.kind === 'item' ? x.i : x.e; const c = child(obj.child_id); const isTest = x.ck === 'test';
+        const label = (isTest ? '✎ ' : x.ck === 'homework' ? '📚 ' : '') + obj.title.replace(/^[^:·]*·\s*/, '');
+        return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${esc(label)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
     }
-    h += '</div>';
+    h += '</div><div class="cal-legend"><span>✎ sprawdzian / kartkówka / dyktando (pogrubione, z jasną ramką)</span><span>📚 zadanie domowe</span><span>kolor = dziecko</span></div>';
     $('#calendar-content').innerHTML = h;
     $('#calendar-content').onclick = e => { const d = e.target.closest('[data-day]'); if (!d) return; S.calSel = d.dataset.day; render(); };
+    $('#cal-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.calChild = b.dataset.child; render(); };
+    $$('#cal-kind button').forEach(b => b.onclick = () => { S.calKind = b.dataset.k; render(); });
 
     // szczegóły wybranego dnia
     const sel = new Date(S.calSel + 'T12:00:00');
     const list = (byDay.get(S.calSel) || []).sort((a, b) => a.when - b.when);
     const dd = $('#calendar-day');
-    dd.innerHTML = `<div class="day-detail">${dayHead(sel)}` + (list.length ? list.map(x => x.kind === 'task' ? taskCard(x.t) : x.kind === 'item' ? itemCard(x.i) : eventCard(x.e)).join('') : `<div class="muted" style="padding:4px 0 10px 4px;font-size:.9rem">Nic zaplanowanego.</div>`) + `<button class="btn sm" data-act="add-event" data-day="${S.calSel}">+ Wydarzenie tego dnia</button></div>`;
+    dd.innerHTML = `<div class="day-detail">${dayHead(sel)}` + (list.length ? list.map(x => x.kind === 'item' ? itemCard(x.i) : eventCard(x.e)).join('') : `<div class="muted" style="padding:4px 0 10px 4px;font-size:.9rem">Nic zaplanowanego.</div>`) + `<button class="btn sm" data-act="add-event" data-day="${S.calSel}">+ Wydarzenie tego dnia</button></div>`;
     wireCards(dd);
   }
 
@@ -404,8 +425,8 @@
     if (i.kind !== 'grade' && isArchived(i)) return false;
     if (!k) return i.kind !== 'grade';
     if (k === 'message') return i.kind === 'message' && !TEST_RE.test(i.title);
-    if (k === 'homework') return i.kind === 'homework' || (i.kind === 'event' && HOMEWORK_RE.test(i.sender || ''));
-    if (k === 'test') return (i.kind === 'event' && TEST_RE.test(i.sender || '') && !HOMEWORK_RE.test(i.sender || '')) || (i.kind === 'message' && TEST_RE.test(i.title));
+    if (k === 'homework') return (i.kind === 'homework' || (i.kind === 'event' && HOMEWORK_RE.test(i.sender || ''))) && !TEST_RE.test(i.title);
+    if (k === 'test') return (i.kind === 'event' && TEST_RE.test((i.sender || '') + ' ' + i.title)) || (i.kind === 'message' && TEST_RE.test(i.title));
     if (k === 'other') return i.kind !== 'grade' && !kindMatch(i, 'message') && !kindMatch(i, 'homework') && !kindMatch(i, 'test');
     return true;
   }
@@ -462,11 +483,12 @@
       h += `<tr><td>${esc(subject)}</td>` + mkeys.map(k => {
         const arr = (bym.get(k) || []).sort((a, b) => a.d - b.d);
         return `<td><div class="gcell">${arr.map(({ i, value, d }) =>
-          `<button class="gchip ${S.reads.has(i.id) ? '' : 'unread'}" data-grade="${i.id}" title="${esc(i.body || '')}"><b>${esc(value)}</b><small>${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}</small></button>`).join('')}</div></td>`;
+          `<button class="gchip ${S.reads.has(i.id) ? '' : 'unread'} ${S.openId === i.id ? 'sel' : ''}" data-grade="${i.id}" title="${esc(i.body || '')}"><b>${esc(value)}</b><small>${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}</small></button>`).join('')}</div></td>`;
       }).join('') + '</tr>';
     }
     h += '</tbody></table></div><p class="muted" style="font-size:.78rem;margin-top:10px">Kliknij ocenę, aby zobaczyć kategorię i komentarz. Czerwona obwódka = jeszcze nieprzejrzana.</p>';
     $('#grades-content').innerHTML = h;
+    const wrap = $('#grades-content .grades-wrap'); if (wrap) wrap.scrollLeft = wrap.scrollWidth;
     wireCards($('#grades-content'));
   }
 
@@ -492,11 +514,12 @@
     const over = t.status !== 'done' && due && due < todayStart;
     const doing = t.status === 'doing';
     const moves = board === 'backlog' ? `<div class="actions"><button class="btn sm" data-act="claim" data-who="${S.me.user_id}">👤 biorę</button>${partner() ? `<button class="btn sm" data-act="claim" data-who="${partner().user_id}">→ ${esc(partner().display_name)}</button>` : ''}<button class="btn sm" data-act="claim" data-who="child">→ Dziecko</button></div>` : board ? `<div class="actions">${t.status !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${t.status !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${t.status === 'done' ? '← ' : ''}w toku${t.status === 'todo' ? ' →' : ''}</button>` : ''}${t.status !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
-    return `<div class="card ${t.status === 'done' ? 'done' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
+    const nC = S.comments.filter(c => c.task_id === t.id).length; const nM = taskUnreadMentions(t.id);
+    return `<div class="card ${t.status === 'done' ? 'done' : ''} ${S.openId === t.id ? 'sel' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
       <button class="check ${t.status === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="Oznacz jako zrobione">${t.status === 'done' ? '✓' : ''}</button>
       <div class="grow clickable" data-act="edit-task">
         <div class="title">${esc(t.title)}</div>
-        <div class="meta">${doing && !board ? '<span class="chip doing">W toku</span>' : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}</div>
+        <div class="meta">${doing && !board ? '<span class="chip doing">W toku</span>' : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
       </div>
       ${board ? moves : (t.status === 'done' ? '' : `<div class="actions"><button class="btn sm" data-act="cycle" title="Zmień status">${doing ? '↩ do zrobienia' : '▶ w toku'}</button></div>`)}</div>`;
@@ -505,7 +528,7 @@
   function eventCard(e) {
     const c = child(e.child_id); const col = c ? c.color : 'var(--line)';
     const time = e.all_day ? 'cały dzień' : fmtTime(e.starts_at) + (e.ends_at ? '–' + fmtTime(e.ends_at) : '');
-    return `<div class="card" style="border-left-color:${col}" data-event="${e.id}">
+    return `<div class="card ${S.openId === e.id ? 'sel' : ''}" style="border-left-color:${col}" data-event="${e.id}">
       <div class="grow clickable" data-act="edit-event">
         <div class="title">${esc(e.title)}</div>
         <div class="meta">${childChip(e.child_id)}<span>📅 ${fmtDate(e.starts_at)} · ${time}</span>${e.source !== 'manual' ? `<span>${SOURCE_LABEL[e.source] || e.source}</span>` : ''}</div>
@@ -517,7 +540,7 @@
   function itemCard(i) {
     const c = child(i.child_id); const col = c ? c.color : 'var(--line)';
     const unread = !S.reads.has(i.id);
-    return `<div class="card ${unread ? 'unread' : ''}" style="border-left-color:${col}" data-item="${i.id}">
+    return `<div class="card ${unread ? 'unread' : ''} ${S.openId === i.id ? 'sel' : ''}" style="border-left-color:${col}" data-item="${i.id}">
       <div class="grow clickable" data-act="open-item">
         <div class="title">${unread ? '● ' : ''}${esc(i.title)}</div>
         <div class="meta">${childChip(i.child_id)}<span>${KIND_LABEL[i.kind] || i.kind} · ${SOURCE_LABEL[i.source] || i.source}</span>${i.sender ? `<span>od: ${esc(i.sender)}</span>` : ''}<span>${fmtDateTime(i.published_at)}</span>${i.occurred_at ? `<span>⏰ ${fmtDate(i.occurred_at)}</span>` : ''}</div>
@@ -573,6 +596,7 @@
   }
 
   async function openItem(i) {
+    S.openId = i.id;
     if (!S.reads.has(i.id)) {
       S.reads.add(i.id);
       sb.from('item_reads').insert({ item_id: i.id, user_id: S.me.user_id }).then(({ error }) => error && console.warn(error));
@@ -627,6 +651,7 @@
 
   function openTaskForm(t) {
     const isNew = !t.id;
+    if (!isNew) { S.openId = t.id; render(); }
     openModal(isNew ? 'Nowe zadanie' : 'Zadanie', `
       <form id="f">
         <label>Tytuł<input name="title" required value="${esc(t.title || '')}"></label>
@@ -641,7 +666,21 @@
         <label>Notatki<textarea name="notes">${esc(t.notes || '')}</textarea></label>
         <button class="btn primary" type="submit">${isNew ? 'Dodaj' : 'Zapisz'}</button>
         ${isNew ? '' : '<button class="btn danger" type="button" id="f-del" style="width:100%;margin-top:8px">Usuń zadanie</button>'}
-      </form>`);
+      </form>
+      ${isNew ? '' : `<div class="comments"><div class="section-title" style="margin-top:0">Komentarze</div><div id="comments-list"></div>
+        <form class="comment-form" id="comment-form"><textarea id="comment-input" placeholder="Napisz komentarz… użyj @imię, żeby zapytać drugą osobę"></textarea><button class="btn sm" type="submit">Wyślij</button></form>
+        <div class="mention-btns">${S.members.filter(m => m.user_id !== S.me.user_id).map(m => `<button type="button" class="btn sm" data-mention="${esc(m.display_name)}">@${esc(m.display_name)}</button>`).join('')}</div></div>`}`);
+    if (!isNew) {
+      refreshComments(t.id); markCommentsRead(t.id);
+      $$('#modal-body [data-mention]').forEach(b => b.onclick = () => { const ta = $('#comment-input'); ta.value = (ta.value ? ta.value.replace(/\s*$/, ' ') : '') + '@' + b.dataset.mention + ' '; ta.focus(); });
+      $('#comment-form').onsubmit = async e => {
+        e.preventDefault(); const body = $('#comment-input').value.trim(); if (!body) return;
+        $('#comment-input').value = '';
+        const { data, error } = await sb.from('task_comments').insert({ task_id: t.id, author: S.me.user_id, body }).select().single();
+        if (error) return fail(error);
+        S.comments.push(data); refreshComments(t.id); render();
+      };
+    }
     $('#f').onsubmit = async e => {
       e.preventDefault(); const f = new FormData(e.target);
       const status = f.get('status') || 'todo';
@@ -657,8 +696,22 @@
     const del = $('#f-del'); if (del) del.onclick = async () => { if (!confirm('Usunąć zadanie?')) return; const { error } = await sb.from('tasks').delete().eq('id', t.id); if (error) return fail(error); S.tasks = S.tasks.filter(x => x.id !== t.id); closeModal(); render(); };
   }
 
+  function refreshComments(taskId) {
+    const el = $('#comments-list'); if (!el) return;
+    const list = S.comments.filter(c => c.task_id === taskId);
+    el.innerHTML = list.length ? list.map(c => `<div class="comment ${c.author === S.me.user_id ? 'me' : ''}"><div class="who">${esc(member(c.author)?.display_name || '?')} · ${fmtDateTime(c.created_at)}</div>${fmtComment(c.body)}</div>`).join('') : '<div class="muted" style="font-size:.85rem">Brak komentarzy.</div>';
+    el.scrollTop = el.scrollHeight;
+  }
+  async function markCommentsRead(taskId) {
+    const unread = S.comments.filter(c => c.task_id === taskId && c.author !== S.me.user_id && !S.commentReads.has(c.id));
+    if (!unread.length) return;
+    unread.forEach(c => S.commentReads.add(c.id)); render();
+    await sb.from('comment_reads').upsert(unread.map(c => ({ comment_id: c.id, user_id: S.me.user_id })), { onConflict: 'comment_id,user_id' });
+  }
+
   function openEventForm(e0) {
     const isNew = !e0.id;
+    if (!isNew) { S.openId = e0.id; render(); }
     const start = e0.starts_at ? new Date(e0.starts_at) : new Date();
     openModal(isNew ? 'Nowe wydarzenie' : 'Wydarzenie', `
       <form id="f">
@@ -749,7 +802,7 @@
 
   // -------------------------------------------------------------- modal
   function openModal(title, html) { $('#modal-title').innerHTML = title; $('#modal-body').innerHTML = html; $('#modal').classList.remove('hidden'); const first = $('#modal-body input,#modal-body textarea'); if (first && window.innerWidth > 640) first.focus(); }
-  function closeModal() { $('#modal').classList.add('hidden'); }
+  function closeModal() { $('#modal').classList.add('hidden'); if (S.openId) { S.openId = null; render(); } }
 
   boot().catch(fail);
 })();

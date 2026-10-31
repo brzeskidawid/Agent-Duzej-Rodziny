@@ -189,7 +189,7 @@ form textarea{min-height:80px;resize:vertical}
 #views:has(.view[data-view=calendar]:not(.hidden)){max-width:1100px}
 .month{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:8px}
 .month .dow{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:center;padding:4px 0 6px}
-.month .day{min-height:76px;border-radius:8px;padding:4px;background:color-mix(in srgb,var(--card),var(--bg) 40%);cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0;border:1px solid transparent}
+.month .day{min-height:112px;border-radius:8px;padding:4px;background:color-mix(in srgb,var(--card),var(--bg) 40%);cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0;border:1px solid transparent}
 .month .day:hover{border-color:var(--line)}
 .month .day.other{opacity:.45}
 .month .day.today{border-color:#0ea5e9}
@@ -197,15 +197,31 @@ form textarea{min-height:80px;resize:vertical}
 .month .day.weekend{background:color-mix(in srgb,var(--card),var(--bg) 70%)}
 .month .dn{font-size:.78rem;font-weight:600;color:var(--muted);text-align:right}
 .month .day.today .dn{color:#0ea5e9}
-.month .pill{font-size:.68rem;line-height:1.2;padding:2px 5px;border-radius:5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
-.month .pill.test{font-weight:700;outline:2px solid var(--danger);outline-offset:-2px}
+.month .pill{font-size:.72rem;line-height:1.25;padding:3px 6px;border-radius:5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.month .pill.test{font-weight:700;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55)}
 .month .pill.task{background:transparent !important;color:var(--ink);border:1px dashed var(--muted)}
 .month .more{font-size:.66rem;color:var(--muted);padding-left:3px}
 @media(max-width:639px){
   .month{gap:2px;padding:4px}
-  .month .day{min-height:58px;padding:3px}
-  .month .pill{font-size:0;height:6px;width:100%;padding:0;border-radius:3px}
-  .month .pill.task{height:4px;border-width:1px}
+  .month .day{min-height:72px;padding:3px}
+  .month .pill{font-size:0;height:9px;width:100%;padding:0;border-radius:3px}
+  .month .pill.test{height:11px;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
   .month .more{font-size:.6rem}
 }
 .day-detail{margin-top:14px}
+
+/* ---------- zaznaczenie otwartego obiektu ---------- */
+.card.sel{outline:2px solid var(--ink);outline-offset:1px}
+.gchip.sel{outline:2px solid var(--ink)}
+/* ---------- komentarze ---------- */
+.comments{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.comment{padding:8px 10px;border-radius:10px;background:var(--line);margin-bottom:6px;font-size:.92rem}
+.comment .who{font-size:.75rem;color:var(--muted);margin-bottom:2px}
+.comment.me{background:color-mix(in srgb,var(--accent),transparent 88%)}
+.comment .m{font-weight:700;color:#0ea5e9}
+.comment-form{display:flex;gap:6px;margin-top:8px}
+.comment-form textarea{flex:1;min-height:44px;margin:0}
+.comment-form .btn{width:auto;margin:0;align-self:flex-end}
+.mention-btns{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.chip.mention{background:#0ea5e9;color:#fff;font-weight:600}
+.cal-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.75rem;color:var(--muted);margin:8px 2px 0}
