@@ -41,7 +41,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-  const VIEW_TITLES = { today: 'Dziś', calendar: 'Kalendarz', tasks: 'Zadania', items: 'Wpisy', grades: 'Oceny', chat: 'Czat' };
+  const VIEW_TITLES = { today: 'Dziś', calendar: 'Kalendarz', tasks: 'Zadania', items: 'Wiadomości', grades: 'Oceny', chat: 'Czat' };
   const TEST_RE = /sprawdzian|kartk[óo]wk|dyktand|praca klasowa|klas[óo]wk|\btest\b|egzamin/i;
   const HOMEWORK_RE = /zadani|praca domowa|zad\. dom/i;
   const KIND_LABEL = { message: 'Wiadomość', announcement: 'Ogłoszenie', homework: 'Zadanie domowe', event: 'Wydarzenie', grade: 'Ocena', attendance: 'Frekwencja', other: 'Inne' };
@@ -314,7 +314,7 @@
     ].sort((a, b) => a.when - b.when);
     h += merged.length ? groupByDay(merged) : `<div class="empty">Nic zaplanowanego. Spokojny tydzień 🙂</div>`;
     if (noDateMine.length) h += `<div class="section-title">Moje zadania bez terminu</div>` + noDateMine.map(taskCard).join('');
-    if (unread.length) h += `<div class="section-title">Nieprzeczytane wpisy</div>` + unread.map(itemCard).join('');
+    if (unread.length) h += `<div class="section-title">Nieprzeczytane wiadomości</div>` + unread.map(itemCard).join('');
     $('#today-content').innerHTML = h;
     wireCards($('#today-content'));
   }
@@ -406,7 +406,7 @@
     const backlog = S.tasks.filter(t => !isAssigned(t) && t.status !== 'done').sort(byDue);
     const bl = $('#tasks-backlog');
     bl.innerHTML = `<div class="backlog-head"><span>Nieprzypisane zadania</span><span class="n">${backlog.length}</span></div>`
-      + (backlog.length ? `<div class="backlog-grid">${backlog.map(t => taskCard(t, 'backlog')).join('')}</div>` : `<div class="col-empty">Pusto. Trafiają tu zadania bez osoby — także te tworzone automatycznie z wpisów z terminem.</div>`)
+      + (backlog.length ? `<div class="backlog-grid">${backlog.map(t => taskCard(t, 'backlog')).join('')}</div>` : `<div class="col-empty">Pusto. Trafiają tu zadania bez osoby — także te tworzone automatycznie z wiadomości z terminem.</div>`)
       + `<button class="col-add" data-act="add-task" data-status="todo" data-backlog="1" style="margin-top:10px">+ Dodaj zadanie</button>`;
     wireCards(bl);
   }
@@ -457,11 +457,11 @@
         + (past.length ? `<div class="section-title">Bez terminu</div>` + past.map(itemCard).join('') : '');
     } else {
       html = list.length ? list.map(itemCard).join('')
-        : `<div class="empty">${S.items.length ? (S.itemsFilter === 'unread' ? 'Brak nowych wpisów ✓' : 'Brak wpisów w tej kategorii.') : 'Jeszcze nie ma żadnych wpisów. Pojawią się tu, gdy uruchomisz workera (Librus / 4Parents) albo dodasz wpis ręcznie.'}</div>`;
+        : `<div class="empty">${S.items.length ? (S.itemsFilter === 'unread' ? 'Brak nowych wiadomości ✓' : 'Brak wiadomości w tej kategorii.') : 'Jeszcze nie ma żadnych wiadomości. Pojawią się tu, gdy uruchomisz workera (Librus / 4Parents) albo dodasz wiadomość ręcznie.'}</div>`;
     }
     $('#items-content').innerHTML = html;
     const nw = list.filter(i => !S.reads.has(i.id)).length;
-    $('#items-summary').textContent = list.length ? `${list.length} wpisów${nw ? ` · ${nw} nowych` : ''}` : '';
+    $('#items-summary').textContent = list.length ? `${list.length} wiadomości${nw ? ` · ${nw} nowych` : ''}` : '';
     wireCards($('#items-content'));
   }
 
@@ -528,7 +528,7 @@
       <button class="check ${t.status === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="Oznacz jako zrobione">${t.status === 'done' ? '✓' : ''}</button>
       <div class="grow clickable" data-act="edit-task">
         <div class="title">${esc(t.title)}</div>
-        <div class="meta">${!board ? (doing ? '<span class="chip doing">W toku</span>' : t.status === 'done' ? '<span class="chip" style="color:var(--ok);font-weight:600">✓ Zrobione</span>' : '<span class="chip">Do zrobienia</span>') : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
+        <div class="meta">${!board ? (doing ? '<span class="chip doing">W toku</span>' : t.status === 'done' ? '<span class="chip" style="color:var(--ok);font-weight:600">✓ Zrobione</span>' : '<span class="chip">Do zrobienia</span>') : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wiadomości</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
       </div>
       ${board ? moves : ''}</div>`;
@@ -652,7 +652,7 @@
       <ul class="list-plain">
         <li><button class="btn" style="width:100%;text-align:left" id="a-task">☑ Zadanie</button></li>
         <li><button class="btn" style="width:100%;text-align:left" id="a-event">📅 Wydarzenie w kalendarzu</button></li>
-        <li><button class="btn" style="width:100%;text-align:left" id="a-item">✉ Wpis / notatka (np. kartka z plecaka)</button></li>
+        <li><button class="btn" style="width:100%;text-align:left" id="a-item">✉ Wiadomość / notatka (np. kartka z plecaka)</button></li>
       </ul>`);
     $('#a-task').onclick = () => openTaskForm({});
     $('#a-event').onclick = () => openEventForm({});
@@ -751,7 +751,7 @@
   }
 
   function openItemForm() {
-    openModal('Nowy wpis', `
+    openModal('Nowa wiadomość', `
       <form id="f">
         <label>Tytuł<input name="title" required placeholder="np. Kartka: wycieczka do ZOO, 40 zł"></label>
         <div class="row">
@@ -768,7 +768,7 @@
       const { data, error } = await sb.from('items').insert(rec).select().single(); if (error) return fail(error);
       S.items.unshift(data); S.reads.add(data.id);
       sb.from('item_reads').insert({ item_id: data.id, user_id: S.me.user_id }).then(() => {});
-      closeModal(); render(); toast('Wpis dodany');
+      closeModal(); render(); toast('Wiadomość dodana');
     };
   }
 
@@ -782,7 +782,7 @@
       <ul class="list-plain">${S.members.map(m => `<li><span class="dot" style="background:${m.color};width:14px;height:14px"></span><span style="flex:1">${esc(m.display_name)}${m.user_id === S.me.user_id ? ' (ja)' : ''}</span></li>`).join('')}</ul>
       <p class="muted" style="font-size:.85rem">Zalogowano jako ${esc(S.user.email)}.</p>
       <button class="btn" id="logout">Wyloguj</button>
-      <p class="muted" style="font-size:.75rem;margin-top:18px">Agent Dużej Rodziny · ${S.items.length} wpisów, ${S.tasks.length} zadań, ${S.events.length} wydarzeń</p>`);
+      <p class="muted" style="font-size:.75rem;margin-top:18px">Agent Dużej Rodziny · ${S.items.length} wiadomości, ${S.tasks.length} zadań, ${S.events.length} wydarzeń</p>`);
     $('#add-kid').onclick = () => openChildForm({});
     $$('#kids [data-edit]').forEach(b => b.onclick = () => openChildForm(child(b.dataset.edit)));
     $('#logout').onclick = () => sb.auth.signOut();
@@ -807,7 +807,7 @@
       if (isNew) S.children.push(data); else Object.assign(child(c.id), data);
       openSettings(); render();
     };
-    const del = $('#f-del'); if (del) del.onclick = async () => { if (!confirm('Usunąć dziecko? Zadania i wpisy zostaną, ale bez przypisania.')) return; const { error } = await sb.from('children').delete().eq('id', c.id); if (error) return fail(error); S.children = S.children.filter(x => x.id !== c.id); openSettings(); render(); };
+    const del = $('#f-del'); if (del) del.onclick = async () => { if (!confirm('Usunąć dziecko? Zadania i wiadomości zostaną, ale bez przypisania.')) return; const { error } = await sb.from('children').delete().eq('id', c.id); if (error) return fail(error); S.children = S.children.filter(x => x.id !== c.id); openSettings(); render(); };
   }
 
   // -------------------------------------------------------------- modal
