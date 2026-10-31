@@ -34,7 +34,7 @@ log = logging.getLogger("worker.librus")
 
 SESSION_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "librus_session.json")
 MESSAGES_LIMIT = 40
-GRADES_DAYS = 400         # bierzemy cały rok szkolny
+# oceny bierzemy od początku bieżącego roku szkolnego (1 września)
 LIBRUS_URL = "https://synergia.librus.pl"
 
 
@@ -86,6 +86,13 @@ def _dt_time(date_s: str | None, time_s: str | None) -> datetime | None:
         except ValueError:
             pass
     return d
+
+
+def _school_year_start() -> datetime:
+    """1 września bieżącego roku szkolnego (wrzesień-sierpień)."""
+    now = datetime.now().astimezone()
+    year = now.year if now.month >= 9 else now.year - 1
+    return now.replace(year=year, month=9, day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
 def _safe_name(name: str) -> str:
@@ -296,7 +303,7 @@ class LibrusSource(Source):
                     log.warning("Librus terminarz: %s", e)
 
                 # --- oceny bieżące (1-6)
-                cutoff = datetime.now().astimezone() - timedelta(days=GRADES_DAYS)
+                cutoff = _school_year_start()
                 try:
                     gcats = await lib.grade_categories()
                     for g in await lib.grades():

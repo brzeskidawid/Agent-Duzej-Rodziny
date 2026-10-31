@@ -207,7 +207,7 @@
 
   function subscribeRealtime() {
     sb.channel('family')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, p => { if (p.eventType === 'INSERT') { S.messages.push(p.new); if (S.view === 'chat') markChatSeen(); render(); } })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, p => { if (p.eventType === 'INSERT') { S.messages.push(p.new); if (S.view === 'chat') markChatSeen(); render(); } else if (p.eventType === 'DELETE') { S.messages = S.messages.filter(m => m.id !== (p.old && p.old.id)); render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async () => { const { data } = await sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'); if (data) { S.tasks = data; render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => { const { data } = await sb.from('events').select('*').order('starts_at'); if (data) { S.events = data; render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, async () => { const { data } = await sb.from('task_comments').select('*').order('created_at'); if (data) { S.comments = data; if (S.openId) refreshComments(S.openId); render(); } })
@@ -235,10 +235,20 @@
     $$('#items-kind .tile').forEach(b => b.onclick = () => { S.itemsKind = S.itemsKind === b.dataset.k ? '' : b.dataset.k; render(); });
     $('#grades-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.gradesChild = b.dataset.child; render(); };
 
+    const ep = $('#emoji-panel');
+    ep.innerHTML = EMOJI.map(e => `<button type="button">${e}</button>`).join('');
+    ep.onclick = e => { const b = e.target.closest('button'); if (!b) return; const inp = $('#chat-input'); inp.value += b.textContent; inp.focus(); };
+    $('#chat-emoji').onclick = () => ep.classList.toggle('hidden');
+    $('#chat-attach').onclick = () => $('#chat-file').click();
+    $('#chat-file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; sendChatImage(f); };
+    $('#chat-input').addEventListener('paste', e => {
+      const f = [...(e.clipboardData?.files || [])][0];
+      if (f && f.type.startsWith('image/')) { e.preventDefault(); sendChatImage(f); }
+    });
     $('#chat-form').onsubmit = async e => {
       e.preventDefault();
       const inp = $('#chat-input'); const body = inp.value.trim(); if (!body) return;
-      inp.value = '';
+      inp.value = ''; $('#emoji-panel').classList.add('hidden');
       const { error } = await sb.from('messages').insert({ sender: S.me.user_id, body });
       if (error) fail(error);
     };
@@ -442,15 +452,20 @@
     const t0 = new Date(); t0.setHours(0, 0, 0, 0);
     return new Date(i.occurred_at) < t0;
   }
+  function catOf(i) {
+    if (i.kind === 'grade') return 'grade';
+    if (i.source === '4parents') return 'kinder';
+    const head = (i.sender || '') + ' ' + (i.title.split(':')[0] || '');
+    if ((i.kind === 'event' && TEST_RE.test((i.sender || '') + ' ' + i.title)) || (i.kind === 'message' && TEST_RE.test(i.title))) return 'test';
+    if ((i.kind === 'homework' || (i.kind === 'event' && HOMEWORK_RE.test(head))) && !TEST_RE.test(i.title)) return 'homework';
+    return 'message';
+  }
   function kindMatch(i, k) {
     if (k === 'archive') return i.kind !== 'grade' && isArchived(i);
     if (i.kind !== 'grade' && isArchived(i)) return false;
-    if (!k) return i.kind !== 'grade';
-    if (k === 'message') return i.kind === 'message' && !TEST_RE.test(i.title);
-    if (k === 'homework') return (i.kind === 'homework' || (i.kind === 'event' && HOMEWORK_RE.test(i.sender || ''))) && !TEST_RE.test(i.title);
-    if (k === 'test') return (i.kind === 'event' && TEST_RE.test((i.sender || '') + ' ' + i.title)) || (i.kind === 'message' && TEST_RE.test(i.title));
-    if (k === 'other') return i.kind !== 'grade' && !kindMatch(i, 'message') && !kindMatch(i, 'homework') && !kindMatch(i, 'test');
-    return true;
+    const c = catOf(i);
+    if (c === 'grade') return false;
+    return !k || c === k;
   }
 
   function renderItems() {
@@ -515,6 +530,28 @@
   }
 
   // ---- CZAT
+  const EMOJI = ['😀','😁','😂','🤣','🙂','😉','😍','🥰','😘','😎','🤔','😴','🙃','😇','🤗','👍','👎','👏','🙏','💪','🤝','✌️','🫶','❤️','💔','🔥','✨','🎉','🎂','🍕','☕','🍺','🏃','⚽','🎸','🚗','🏠','🧸','📚','✏️','🎒','⏰','✅','❌','❗','❓','💬','😅','😭','🤯','🤪','🥳','😱','🤷','🤦'];
+  const IMG_RE = /(https?:\/\/\S+?\.(?:gif|png|jpe?g|webp)(?:\?\S*)?)/i;
+  const GIF_HOST_RE = /^(https?:\/\/(?:media\d*\.giphy\.com|i\.giphy\.com|media\.tenor\.com|c\.tenor\.com)\/\S+)$/i;
+  const URL_RE = /(https?:\/\/[^\s<]+)/g;
+  const mediaUrls = new Map();
+
+  function chatBodyHtml(body) {
+    const m = body.match(IMG_RE) || body.match(GIF_HOST_RE);
+    if (m && body.trim() === m[1]) return `<img src="${esc(m[1])}" alt="" loading="lazy">`;
+    let h = esc(body).replace(URL_RE, u => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+    if (m) h += `<img src="${esc(m[1])}" alt="" loading="lazy">`;
+    return h;
+  }
+
+  async function signMedia(paths) {
+    const missing = paths.filter(p => !mediaUrls.has(p));
+    if (!missing.length) return false;
+    const { data } = await sb.storage.from('attachments').createSignedUrls(missing, 60 * 60 * 6);
+    (data || []).forEach(r => { if (r.signedUrl) mediaUrls.set(r.path, r.signedUrl); });
+    return true;
+  }
+
   function renderChat() {
     const log = $('#chat-log');
     let h = '', lastDay = null;
@@ -522,10 +559,38 @@
       const d = new Date(m.created_at); const k = dateKey(d);
       if (k !== lastDay) { lastDay = k; h += `<div class="muted" style="text-align:center;font-size:.75rem;margin:10px 0 4px">${isToday(d) ? 'Dziś' : fmtDate(d)}</div>`; }
       const me = m.sender === S.me.user_id;
-      h += `<div class="msg ${me ? 'me' : ''}">${esc(m.body)}<span class="t">${me ? '' : esc(member(m.sender)?.display_name || '') + ' · '}${fmtTime(d)}</span></div>`;
+      const media = m.media_path ? (mediaUrls.has(m.media_path) ? `<img src="${esc(mediaUrls.get(m.media_path))}" alt="" loading="lazy">` : '<div class="muted" style="font-size:.78rem">ładowanie obrazka…</div>') : '';
+      h += `<div class="msg ${me ? 'me' : ''}">${me ? `<button class="del" data-del="${m.id}" title="Usuń">✕</button>` : ''}${media}${m.body ? chatBodyHtml(m.body) : ''}<span class="t">${me ? '' : esc(member(m.sender)?.display_name || '') + ' · '}${fmtTime(d)}</span></div>`;
     }
     log.innerHTML = h || `<div class="empty">Napiszcie do siebie coś miłego 🙂</div>`;
+    log.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteMessage(b.dataset.del));
     log.scrollTop = log.scrollHeight; window.scrollTo(0, document.body.scrollHeight);
+    const paths = S.messages.map(m => m.media_path).filter(p => p && !mediaUrls.has(p));
+    if (paths.length) signMedia(paths).then(ok => ok && S.view === 'chat' && renderChat());
+  }
+
+  async function deleteMessage(id) {
+    const m = S.messages.find(x => x.id === id);
+    if (!m || m.sender !== S.me.user_id) return;
+    if (!confirm('Usunąć tę wiadomość?')) return;
+    S.messages = S.messages.filter(x => x.id !== id); render();
+    const { error } = await sb.from('messages').delete().eq('id', id);
+    if (error) fail(error);
+    if (m.media_path) sb.storage.from('attachments').remove([m.media_path]).then(() => {});
+  }
+
+  async function sendChatImage(file) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) return toast('Plik za duży (max 10 MB)');
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const path = `chat/${crypto.randomUUID()}.${ext}`;
+    toast('Wysyłam obrazek…');
+    const { error: upErr } = await sb.storage.from('attachments').upload(path, file, { contentType: file.type, upsert: false });
+    if (upErr) return fail(upErr);
+    const body = $('#chat-input').value.trim(); $('#chat-input').value = '';
+    const { data, error } = await sb.from('messages').insert({ sender: S.me.user_id, body, media_path: path }).select().single();
+    if (error) return fail(error);
+    S.messages.push(data); render();
   }
 
   // -------------------------------------------------------------- cards

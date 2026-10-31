@@ -85,7 +85,7 @@
         <button class="tile" data-k="message"><span class="ico">✉</span><span class="lbl">Wiadomości</span><span class="cnt"></span></button>
         <button class="tile" data-k="test"><span class="ico">📝</span><span class="lbl">Sprawdziany</span><span class="cnt"></span></button>
         <button class="tile" data-k="homework"><span class="ico">📚</span><span class="lbl">Zadania domowe</span><span class="cnt"></span></button>
-        <button class="tile" data-k="other"><span class="ico">📣</span><span class="lbl">Inne</span><span class="cnt"></span></button>
+        <button class="tile" data-k="kinder"><span class="ico">🧸</span><span class="lbl">Zadania przedszkole</span><span class="cnt"></span></button>
         <button class="tile archive" data-k="archive"><span class="ico">🗄</span><span class="lbl">Archiwum</span><span class="cnt"></span></button>
       </div>
       <div class="toolbar">
@@ -108,8 +108,12 @@
     <!-- CZAT -->
     <div class="view hidden" data-view="chat">
       <div id="chat-log" class="chat-log"></div>
+      <div id="emoji-panel" class="emoji-panel hidden"></div>
       <form id="chat-form" class="chat-form">
-        <input id="chat-input" type="text" placeholder="Napisz wiadomość…" autocomplete="off" required>
+        <button type="button" class="icon-btn" id="chat-emoji" title="Emoji">🙂</button>
+        <button type="button" class="icon-btn" id="chat-attach" title="Obrazek lub GIF">📎</button>
+        <input type="file" id="chat-file" accept="image/*,image/gif" hidden>
+        <input id="chat-input" type="text" placeholder="Napisz wiadomość albo wklej link do GIF-a…" autocomplete="off">
         <button class="btn primary" type="submit">Wyślij</button>
       </form>
     </div>
