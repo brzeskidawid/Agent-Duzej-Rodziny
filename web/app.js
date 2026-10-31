@@ -111,6 +111,13 @@
     watchForUpdates();
   }
 
+  async function refreshData() {
+    const b = $('#btn-refresh'); b.classList.add('spinning');
+    try { await loadAll(); render(); toast('Odświeżono'); } catch (e) { fail(e); }
+    finally { b.classList.remove('spinning'); }
+    checkForUpdate();
+  }
+
   // -------------------------------------------------------------- aktualizacje aplikacji
   let currentVersion = null;
   async function fetchVersion() {
@@ -162,6 +169,7 @@
     $$('.bottom-nav button').forEach(b => b.onclick = () => setView(b.dataset.nav));
     $('#fab').onclick = () => openAddMenu();
     $('#btn-settings').onclick = openSettings;
+    $('#btn-refresh').onclick = refreshData;
     $('#modal-close').onclick = closeModal;
     $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
 

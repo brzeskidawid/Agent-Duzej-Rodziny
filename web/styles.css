@@ -142,3 +142,7 @@ form textarea{min-height:80px;resize:vertical}
 
 .update-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:999px;box-shadow:var(--shadow);z-index:60;font-size:.9rem;display:flex;gap:10px;align-items:center;white-space:nowrap}
 .update-bar .btn{background:var(--bg);color:var(--ink);border-color:transparent}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+.icon-btn.spinning{animation:spin .8s linear infinite;pointer-events:none}
+@media (prefers-reduced-motion: reduce){.icon-btn.spinning{animation:none;opacity:.5}}
