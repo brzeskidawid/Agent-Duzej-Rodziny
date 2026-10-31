@@ -341,7 +341,7 @@
     const push = (k, x) => { if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(x); };
     $('#cal-child').innerHTML = childChips(S.calChild, true);
     $$('#cal-kind button').forEach(b => b.classList.toggle('on', b.dataset.k === S.calKind));
-    const calKindOf = (title, cat) => TEST_RE.test(cat + ' ' + title) ? 'test' : HOMEWORK_RE.test(cat) ? 'homework' : 'other';
+    const calKindOf = (title, cat) => { const head = (title.split(':')[0] || '') + ' ' + (cat || ''); return TEST_RE.test(cat + ' ' + title) ? 'test' : HOMEWORK_RE.test(head) ? 'homework' : 'other'; };
     const okChild = cid => !S.calChild || cid === S.calChild;
     const okKind = k => !S.calKind || k === S.calKind;
     for (const e of S.events) { const k = calKindOf(e.title, ''); if (okChild(e.child_id) && okKind(k)) push(dateKey(e.starts_at), { kind: 'event', ck: k, when: new Date(e.starts_at), e }); }
@@ -363,7 +363,7 @@
         return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${esc(label)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
     }
-    h += '</div><div class="cal-legend"><span>❗ sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>kolor = dziecko</span></div>';
+    h += '</div><div class="cal-legend"><span>❗ sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>📣 inne</span><span>kolor = dziecko</span></div>';
     $('#calendar-content').innerHTML = h;
     $('#calendar-content').onclick = e => { const d = e.target.closest('[data-day]'); if (!d) return; S.calSel = d.dataset.day; render(); };
     $('#cal-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.calChild = b.dataset.child; render(); };
