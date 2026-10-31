@@ -75,17 +75,27 @@
           <button data-f="unread" class="on">Nieprzeczytane</button>
           <button data-f="all">Wszystkie</button>
         </div>
-        <select id="items-kind" class="select">
-          <option value="">Wszystkie rodzaje</option>
-          <option value="message">Wiadomości</option>
-          <option value="announcement">Ogłoszenia</option>
-          <option value="homework">Zadania domowe</option>
-          <option value="event">Terminarz</option>
-          <option value="grade">Oceny</option>
-        </select>
         <select id="items-child" class="select"><option value="">Wszystkie dzieci</option></select>
       </div>
+      <div class="toolbar">
+        <div class="seg scroll-x" id="items-kind">
+          <button data-k="" class="on">Wszystko</button>
+          <button data-k="message">Wiadomości</button>
+          <button data-k="test">Sprawdziany</button>
+          <button data-k="homework">Zadania dom.</button>
+          <button data-k="other">Inne</button>
+        </div>
+      </div>
       <div id="items-content"></div>
+    </div>
+
+    <!-- OCENY -->
+    <div class="view hidden" data-view="grades">
+      <div class="toolbar">
+        <select id="grades-child" class="select"></select>
+        <span class="muted" id="grades-summary"></span>
+      </div>
+      <div id="grades-content"></div>
     </div>
 
     <!-- CZAT -->
@@ -105,6 +115,7 @@
     <button data-nav="calendar"><span class="ico">▦</span>Kalendarz</button>
     <button data-nav="tasks"><span class="ico">☑</span>Zadania<span class="badge" id="badge-tasks"></span></button>
     <button data-nav="items"><span class="ico">✉</span>Wpisy<span class="badge" id="badge-items"></span></button>
+    <button data-nav="grades"><span class="ico">★</span>Oceny<span class="badge" id="badge-grades"></span></button>
     <button data-nav="chat"><span class="ico">💬</span>Czat<span class="badge" id="badge-chat"></span></button>
   </nav>
 </section>

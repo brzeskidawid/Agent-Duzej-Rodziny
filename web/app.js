@@ -27,6 +27,7 @@
     itemsFilter: 'unread',
     itemsChild: '',
     itemsKind: '',
+    gradesChild: '',
     calStart: startOfWeek(new Date()),
     lastChatSeen: (() => { try { return Number(localStorage.getItem('adr_lastChatSeen') || 0); } catch (e) { return 0; } })(),
   };
@@ -34,7 +35,8 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-  const VIEW_TITLES = { today: 'Dziś', calendar: 'Kalendarz', tasks: 'Zadania', items: 'Wpisy', chat: 'Czat' };
+  const VIEW_TITLES = { today: 'Dziś', calendar: 'Kalendarz', tasks: 'Zadania', items: 'Wpisy', grades: 'Oceny', chat: 'Czat' };
+  const TEST_RE = /sprawdzian|kartk[óo]wk|dyktand|praca klasowa|klas[óo]wk|\btest\b|egzamin/i;
   const KIND_LABEL = { message: 'Wiadomość', announcement: 'Ogłoszenie', homework: 'Zadanie domowe', event: 'Wydarzenie', grade: 'Ocena', attendance: 'Frekwencja', other: 'Inne' };
   const SOURCE_LABEL = { librus: 'Librus', '4parents': '4Parents', manual: 'Ręcznie' };
   const COLORS = ['#0ea5e9', '#8b5cf6', '#ec4899', '#f97316', '#22c55e', '#eab308', '#14b8a6', '#ef4444'];
@@ -147,7 +149,8 @@
     $$('#task-filter button').forEach(b => b.onclick = () => { S.taskFilter = b.dataset.f; render(); });
     $$('#items-filter button').forEach(b => b.onclick = () => { S.itemsFilter = b.dataset.f; render(); });
     $('#items-child').onchange = e => { S.itemsChild = e.target.value; render(); };
-    $('#items-kind').onchange = e => { S.itemsKind = e.target.value; render(); };
+    $$('#items-kind button').forEach(b => b.onclick = () => { S.itemsKind = b.dataset.k; render(); });
+    $('#grades-child').onchange = e => { S.gradesChild = e.target.value; render(); };
 
     $('#chat-form').onsubmit = async e => {
       e.preventDefault();
@@ -180,12 +183,15 @@
     renderChildSelect();
     $$('#task-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === S.taskFilter));
     $$('#items-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === S.itemsFilter));
-    ({ today: renderToday, calendar: renderCalendar, tasks: renderTasks, items: renderItems, chat: renderChat })[S.view]();
+    $$('#items-kind button').forEach(b => b.classList.toggle('on', b.dataset.k === S.itemsKind));
+    ({ today: renderToday, calendar: renderCalendar, tasks: renderTasks, items: renderItems, grades: renderGrades, chat: renderChat })[S.view]();
   }
 
   function renderBadges() {
     const myOpen = S.tasks.filter(t => t.status === 'todo' && t.assignee === S.me.user_id).length;
-    const unread = S.items.filter(i => !S.reads.has(i.id)).length;
+    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade').length;
+    const unreadGrades = S.items.filter(i => !S.reads.has(i.id) && i.kind === 'grade').length;
+    $('#badge-grades').textContent = unreadGrades || '';
     const newChat = S.messages.filter(m => m.sender !== S.me.user_id && new Date(m.created_at).getTime() > S.lastChatSeen).length;
     $('#badge-tasks').textContent = myOpen || '';
     $('#badge-items').textContent = unread || '';
@@ -197,6 +203,11 @@
     const cur = sel.value;
     sel.innerHTML = '<option value="">Wszystkie dzieci</option>' + S.children.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     sel.value = cur;
+    const gs = $('#grades-child');
+    const withGrades = S.children.filter(c => S.items.some(i => i.kind === 'grade' && i.child_id === c.id));
+    const list = withGrades.length ? withGrades : S.children;
+    if (!S.gradesChild || !list.some(c => c.id === S.gradesChild)) S.gradesChild = list[0]?.id || '';
+    gs.innerHTML = list.map(c => `<option value="${c.id}" ${c.id === S.gradesChild ? 'selected' : ''}>${esc(c.name)}</option>`).join('') || '<option value="">— brak dzieci —</option>';
   }
 
   // ---- DZIŚ
@@ -207,7 +218,7 @@
     const overdue = myTasks.filter(t => t.due_at && new Date(t.due_at) < todayStart);
     const dueSoon = myTasks.filter(t => !t.due_at || (new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7));
     const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7);
-    const unread = S.items.filter(i => !S.reads.has(i.id)).slice(0, 8);
+    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade').slice(0, 8);
     const greeting = now.getHours() < 12 ? 'Dzień dobry' : now.getHours() < 18 ? 'Cześć' : 'Dobry wieczór';
 
     let h = `<h2>${greeting}, ${esc(S.me.display_name)}</h2><p class="muted">${DAYS[now.getDay()]}, ${fmtDate(now)}</p>`;
@@ -268,45 +279,68 @@
   }
 
   // ---- WPISY
+  function kindMatch(i, k) {
+    if (!k) return i.kind !== 'grade';
+    if (k === 'message') return i.kind === 'message';
+    if (k === 'homework') return i.kind === 'homework';
+    if (k === 'test') return i.kind === 'event' && TEST_RE.test((i.sender || '') + ' ' + i.title);
+    if (k === 'other') return i.kind !== 'grade' && !kindMatch(i, 'message') && !kindMatch(i, 'homework') && !kindMatch(i, 'test');
+    return true;
+  }
+
   function renderItems() {
-    let list = S.items;
-    if (S.itemsKind) list = list.filter(i => i.kind === S.itemsKind);
+    let list = S.items.filter(i => kindMatch(i, S.itemsKind));
     if (S.itemsFilter === 'unread') list = list.filter(i => !S.reads.has(i.id));
     if (S.itemsChild) list = list.filter(i => i.child_id === S.itemsChild);
     let html;
-    if (S.itemsKind === 'grade' && list.length) html = gradesBySubject(list);
-    else html = list.length ? list.map(itemCard).join('')
-      : `<div class="empty">${S.items.length ? 'Wszystko przeczytane ✓' : 'Jeszcze nie ma żadnych wpisów. Pojawią się tu, gdy uruchomisz workera (Librus / 4Parents) albo dodasz wpis ręcznie.'}</div>`;
+    if (S.itemsKind === 'test') {
+      // sprawdziany: nadchodzące od najbliższego, potem minione
+      const now = Date.now();
+      const up = list.filter(i => i.occurred_at && new Date(i.occurred_at) >= now).sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
+      const past = list.filter(i => !i.occurred_at || new Date(i.occurred_at) < now).sort((a, b) => new Date(b.occurred_at || 0) - new Date(a.occurred_at || 0));
+      html = (up.length ? `<div class="section-title">Nadchodzące</div>` + groupByDay(up.map(i => ({ when: new Date(i.occurred_at), html: itemCard(i) }))) : `<div class="empty">Brak zaplanowanych sprawdzianów 🎉</div>`)
+        + (past.length ? `<div class="section-title">Minione</div>` + past.map(itemCard).join('') : '');
+    } else {
+      html = list.length ? list.map(itemCard).join('')
+        : `<div class="empty">${S.items.length ? (S.itemsFilter === 'unread' ? 'Wszystko przeczytane ✓' : 'Brak wpisów w tej kategorii.') : 'Jeszcze nie ma żadnych wpisów. Pojawią się tu, gdy uruchomisz workera (Librus / 4Parents) albo dodasz wpis ręcznie.'}</div>`;
+    }
     $('#items-content').innerHTML = html;
     wireCards($('#items-content'));
   }
 
-  // Oceny: grupowanie dziecko → przedmiot (tytuł wpisu ma postać "Przedmiot: ocena")
-  function gradesBySubject(list) {
-    const byChild = new Map();
+  // ---- OCENY: tabela przedmiot × miesiąc
+  function renderGrades() {
+    const list = S.items.filter(i => i.kind === 'grade' && (!S.gradesChild || i.child_id === S.gradesChild));
+    const sum = $('#grades-summary');
+    if (!list.length) { sum.textContent = ''; $('#grades-content').innerHTML = `<div class="empty">Brak ocen dla tego dziecka.</div>`; return; }
+    const months = new Map();   // key 'YYYY-MM' -> label
+    const subjects = new Map(); // subject -> Map(monthKey -> [items])
     for (const i of list) {
       const idx = i.title.indexOf(':');
       const subject = idx > 0 ? i.title.slice(0, idx).trim() : 'Inne';
       const value = idx > 0 ? i.title.slice(idx + 1).trim() : i.title;
-      const ck = i.child_id || '';
-      if (!byChild.has(ck)) byChild.set(ck, new Map());
-      const bySubj = byChild.get(ck);
-      if (!bySubj.has(subject)) bySubj.set(subject, []);
-      bySubj.get(subject).push({ i, value });
+      const d = new Date(i.published_at);
+      const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      months.set(mk, `${MONTHS[d.getMonth()]} ${d.getFullYear()}`);
+      if (!subjects.has(subject)) subjects.set(subject, new Map());
+      const bym = subjects.get(subject);
+      if (!bym.has(mk)) bym.set(mk, []);
+      bym.get(mk).push({ i, value, d });
     }
-    let h = '';
-    for (const [ck, bySubj] of byChild) {
-      const c = child(ck);
-      h += `<div class="day-head"><span class="d" style="color:${c ? c.color : 'inherit'}">${c ? esc(c.name) : 'Bez dziecka'}</span><span class="w">${[...bySubj.values()].reduce((n, a) => n + a.length, 0)} ocen</span></div>`;
-      for (const [subject, arr] of [...bySubj].sort((a, b) => a[0].localeCompare(b[0], 'pl'))) {
-        h += `<div class="card" style="border-left-color:${c ? c.color : 'var(--line)'};flex-direction:column;gap:6px">
-          <div class="title">${esc(subject)}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">${arr.map(({ i, value }) =>
-            `<button class="chip clickable ${S.reads.has(i.id) ? '' : 'unread'}" data-grade="${i.id}" title="${esc(fmtDate(i.published_at))}${i.body ? ' · ' + esc(i.body.split('\n')[0]) : ''}" style="font-size:.95rem;font-weight:600;padding:4px 10px;border:0;cursor:pointer">${esc(value)}</button>`).join('')}</div>
-        </div>`;
-      }
+    const mkeys = [...months.keys()].sort();
+    const unread = list.filter(i => !S.reads.has(i.id)).length;
+    sum.textContent = `${list.length} ocen${unread ? ` · ${unread} nowych` : ''}`;
+    let h = `<div class="grades-wrap"><table class="grades"><thead><tr><th>Przedmiot</th>${mkeys.map(k => `<th>${esc(months.get(k))}</th>`).join('')}</tr></thead><tbody>`;
+    for (const [subject, bym] of [...subjects].sort((a, b) => a[0].localeCompare(b[0], 'pl'))) {
+      h += `<tr><td>${esc(subject)}</td>` + mkeys.map(k => {
+        const arr = (bym.get(k) || []).sort((a, b) => a.d - b.d);
+        return `<td><div class="gcell">${arr.map(({ i, value, d }) =>
+          `<button class="gchip ${S.reads.has(i.id) ? '' : 'unread'}" data-grade="${i.id}" title="${esc(i.body || '')}"><b>${esc(value)}</b><small>${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}</small></button>`).join('')}</div></td>`;
+      }).join('') + '</tr>';
     }
-    return h;
+    h += '</tbody></table></div><p class="muted" style="font-size:.78rem;margin-top:10px">Kliknij ocenę, aby zobaczyć kategorię i komentarz. Czerwona obwódka = jeszcze nieprzejrzana.</p>';
+    $('#grades-content').innerHTML = h;
+    wireCards($('#grades-content'));
   }
 
   // ---- CZAT
