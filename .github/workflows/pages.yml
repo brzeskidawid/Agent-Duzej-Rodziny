@@ -22,7 +22,7 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true
-      - run: echo "${GITHUB_SHA::7}" > web/app/version.txt
+      - run: echo "${GITHUB_SHA::7}" | tee web/app/version.txt web/version.txt
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
