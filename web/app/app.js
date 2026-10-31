@@ -81,6 +81,19 @@
   const isAssigned = t => !!t.assignee || !!t.child_assignee;
   function itemForEvent(e) { return e.item_id ? S.items.find(i => i.id === e.item_id) : S.items.find(i => i.source === e.source && i.external_id === e.external_id); }
   function taskForEvent(e) { const i = itemForEvent(e); return i ? S.tasks.find(t => t.item_id === i.id) : null; }
+  function testKw(title) { const m = title.match(TEST_RE); return m ? m[0].toLowerCase().slice(0, 5) : null; }
+  function twinEventItem(msg) {
+    if (msg.kind !== 'message' || !msg.occurred_at) return null;
+    const kw = testKw(msg.title); if (!kw) return null;
+    const d = dateKey(msg.occurred_at);
+    return S.items.find(i => i.kind === 'event' && i.child_id === msg.child_id && i.occurred_at && dateKey(i.occurred_at) === d && i.title.toLowerCase().includes(kw)) || null;
+  }
+  function twinMessage(evItem) {
+    if (evItem.kind !== 'event' || !evItem.occurred_at) return null;
+    const kw = testKw(evItem.title); if (!kw) return null;
+    const d = dateKey(evItem.occurred_at);
+    return S.items.find(i => i.kind === 'message' && i.child_id === evItem.child_id && i.occurred_at && dateKey(i.occurred_at) === d && i.title.toLowerCase().includes(kw)) || null;
+  }
   function goToTask(id) { S.openId = id; setView('tasks'); setTimeout(() => { const el = document.querySelector(`[data-task="${id}"]`); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 50); }
   function mentionsMe(c) { return c.author !== S.me.user_id && new RegExp('@' + S.me.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(c.body); }
   function unreadMentions() { return S.comments.filter(c => mentionsMe(c) && !S.commentReads.has(c.id)); }
@@ -255,7 +268,7 @@
     $$('#items-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === S.itemsFilter));
     $$('#items-kind .tile').forEach(b => {
       b.classList.toggle('on', b.dataset.k === S.itemsKind);
-      const all = S.items.filter(i => kindMatch(i, b.dataset.k) && (!S.itemsChild || i.child_id === S.itemsChild));
+      const all = S.items.filter(i => kindMatch(i, b.dataset.k) && (!S.itemsChild || i.child_id === S.itemsChild) && !twinEventItem(i));
       const nw = all.filter(i => !S.reads.has(i.id)).length;
       const c = b.querySelector('.cnt');
       if (b.dataset.k === 'archive') { c.textContent = all.length ? `${all.length}` : '—'; c.classList.remove('new'); }
@@ -266,7 +279,7 @@
 
   function renderBadges() {
     const myOpen = S.tasks.filter(t => t.status !== 'done' && t.assignee === S.me.user_id).length;
-    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i)).length;
+    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i) && !twinEventItem(i)).length;
     const unreadGrades = S.items.filter(i => !S.reads.has(i.id) && i.kind === 'grade').length;
     $('#badge-grades').textContent = unreadGrades || '';
     const newChat = S.messages.filter(m => m.sender !== S.me.user_id && new Date(m.created_at).getTime() > S.lastChatSeen).length;
@@ -298,7 +311,7 @@
     const weekTasks = S.tasks.filter(t => t.due_at && new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7);
     const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7 && !taskForEvent(e));
     const noDateMine = myTasks.filter(t => !t.due_at);
-    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i)).slice(0, 8);
+    const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i) && !twinEventItem(i)).slice(0, 8);
     const greeting = now.getHours() < 12 ? 'Dzień dobry' : now.getHours() < 18 ? 'Cześć' : 'Dobry wieczór';
 
     let h = `<h2>${greeting}, ${esc(S.me.display_name)}</h2><p class="muted">${DAYS[now.getDay()]}, ${fmtDate(now)}</p>`;
@@ -441,7 +454,7 @@
   }
 
   function renderItems() {
-    let list = S.items.filter(i => kindMatch(i, S.itemsKind));
+    let list = S.items.filter(i => kindMatch(i, S.itemsKind) && !twinEventItem(i));
     if (S.itemsFilter === 'unread') list = list.filter(i => !S.reads.has(i.id));
     if (S.itemsChild) list = list.filter(i => i.child_id === S.itemsChild);
     let html;
@@ -554,7 +567,7 @@
         <div class="title">${unread ? '● ' : ''}${esc(i.title)}</div>
         <div class="meta">${childChip(i.child_id)}<span>${KIND_LABEL[i.kind] || i.kind} · ${SOURCE_LABEL[i.source] || i.source}</span>${i.sender ? `<span>od: ${esc(i.sender)}</span>` : ''}<span>${fmtDateTime(i.published_at)}</span>${i.occurred_at ? `<span>⏰ ${fmtDate(i.occurred_at)}</span>` : ''}</div>
       </div>
-      <div class="actions">${S.tasks.some(t => t.item_id === i.id) ? `<button class="btn sm" data-act="goto-task" data-task-id="${S.tasks.find(t => t.item_id === i.id).id}">↗ zadanie</button>` : `<button class="btn sm" data-act="item-to-task">→ zadanie</button>`}</div></div>`;
+      <div class="actions">${(() => { const tm = twinMessage(i); return tm ? `<button class="btn sm" data-act="open-twin" data-item-id="${tm.id}" title="${esc(tm.sender || '')}">💬 wiadomość${S.reads.has(tm.id) ? '' : ' ●'}</button>` : ''; })()}${S.tasks.some(t => t.item_id === i.id) ? `<button class="btn sm" data-act="goto-task" data-task-id="${S.tasks.find(t => t.item_id === i.id).id}">↗ zadanie</button>` : `<button class="btn sm" data-act="item-to-task">→ zadanie</button>`}</div></div>`;
   }
 
   function wireCards(root) {
@@ -566,6 +579,7 @@
       const card = btn.closest('.card');
       if (act === 'settings') return openSettings();
       if (act === 'goto-task') return goToTask(btn.dataset.taskId);
+      if (act === 'open-twin') return openItem(S.items.find(x => x.id === btn.dataset.itemId));
       if (act === 'add-event') return openEventForm({ starts_at: new Date(btn.dataset.day + 'T12:00:00').toISOString() });
       if (act === 'add-task') return openTaskForm({ status: btn.dataset.status, assignee: btn.dataset.backlog ? null : undefined });
       if (act === 'toggle') return toggleTask(card.dataset.task);
