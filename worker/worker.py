@@ -116,6 +116,8 @@ def run_once(store: Store, sources: list[Source]) -> None:
             n_i = store.upsert_items(items)
             n_e = store.upsert_events(events)
             log.info("%-10s OK  wpisy=%d wydarzenia=%d  (%.1fs)", src.name, n_i, n_e, time.time() - t0)
+        except NotImplementedError as e:
+            log.warning("%-10s POMINIĘTE: %s", src.name, e)
         except Exception as e:  # jedno źródło nie może położyć pozostałych
             log.exception("%-10s BŁĄD: %s", src.name, e)
 
@@ -134,7 +136,11 @@ def main() -> int:
             log.error("Brak %s w pliku .env", k)
             return 2
 
-    store = Store(env["SUPABASE_URL"], env["SUPABASE_SERVICE_ROLE_KEY"])
+    key = env["SUPABASE_SERVICE_ROLE_KEY"].strip()
+    if not (key.startswith("sb_secret_") or key.startswith("eyJ")):
+        log.error("SUPABASE_SERVICE_ROLE_KEY w .env nie wygląda na klucz tajny (powinien zaczynać się od sb_secret_). Otwórz .env i wklej klucz z Supabase → Project Settings → API Keys → Secret keys.")
+        return 2
+    store = Store(env["SUPABASE_URL"], key)
     sources = build_sources(env)
     if not sources:
         log.error("Brak źródeł do uruchomienia (SOURCES w .env)")
