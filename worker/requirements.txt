@@ -1,3 +1,4 @@
 supabase>=2.4
 python-dotenv>=1.0
 librus-synergia>=0.3.30
+requests>=2.31

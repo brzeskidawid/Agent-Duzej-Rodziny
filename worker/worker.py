@@ -45,6 +45,7 @@ def build_sources(env: dict) -> list[Source]:
             sources.append(FourParentsSource(
                 login=env["FOURPARENTS_LOGIN"], password=env["FOURPARENTS_PASSWORD"],
                 child_map=env.get("FOURPARENTS_CHILD_MAP", ""),
+                base_url=env.get("FOURPARENTS_URL", ""),
             ))
         else:
             log.warning("Nieznane źródło w SOURCES: %s (pomijam)", name)
