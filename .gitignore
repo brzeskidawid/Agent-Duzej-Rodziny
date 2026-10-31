@@ -1,0 +1,4 @@
+worker/.env
+worker/.venv/
+worker/worker.log
+__pycache__/

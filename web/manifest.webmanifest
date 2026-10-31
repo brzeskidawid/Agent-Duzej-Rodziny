@@ -1,0 +1,10 @@
+{
+  "name": "Agent Dużej Rodziny",
+  "short_name": "Agent",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f7fb",
+  "theme_color": "#0f172a",
+  "lang": "pl",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
