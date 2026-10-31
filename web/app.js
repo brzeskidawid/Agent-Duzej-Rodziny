@@ -295,7 +295,7 @@
     const in7 = addDays(todayStart, 7);
     const myTasks = S.tasks.filter(t => t.status !== 'done' && (t.assignee === S.me.user_id || !isAssigned(t)));
     const overdue = myTasks.filter(t => t.due_at && new Date(t.due_at) < todayStart);
-    const weekTasks = S.tasks.filter(t => t.status !== 'done' && t.due_at && new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7);
+    const weekTasks = S.tasks.filter(t => t.due_at && new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7);
     const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7 && !taskForEvent(e));
     const noDateMine = myTasks.filter(t => !t.due_at);
     const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i)).slice(0, 8);
@@ -524,14 +524,14 @@
     const doing = t.status === 'doing';
     const moves = board === 'backlog' ? `<div class="actions"><button class="btn sm" data-act="claim" data-who="${S.me.user_id}">👤 biorę</button>${partner() ? `<button class="btn sm" data-act="claim" data-who="${partner().user_id}">→ ${esc(partner().display_name)}</button>` : ''}<button class="btn sm" data-act="claim" data-who="child">→ Dziecko</button></div>` : board ? `<div class="actions">${t.status !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${t.status !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${t.status === 'done' ? '← ' : ''}w toku${t.status === 'todo' ? ' →' : ''}</button>` : ''}${t.status !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
     const nC = S.comments.filter(c => c.task_id === t.id).length; const nM = taskUnreadMentions(t.id);
-    return `<div class="card ${t.status === 'done' ? 'done' : ''} ${S.openId === t.id ? 'sel' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
+    return `<div class="card ${t.status === 'done' && board ? 'done' : ''} ${S.openId === t.id ? 'sel' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
       <button class="check ${t.status === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="Oznacz jako zrobione">${t.status === 'done' ? '✓' : ''}</button>
       <div class="grow clickable" data-act="edit-task">
         <div class="title">${esc(t.title)}</div>
-        <div class="meta">${!board ? (doing ? '<span class="chip doing">W toku</span>' : t.status === 'done' ? '<span class="chip" style="color:var(--ok);font-weight:600">✓ Zrobione</span>' : '<span class="chip">Do zrobienia</span>') : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wiadomości</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
+        <div class="meta">${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wiadomości</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
       </div>
-      ${board ? moves : ''}</div>`;
+      ${board ? moves : `<div class="actions"><span class="status st-${t.status}">${t.status === 'done' ? '✓ Zrobione' : doing ? '◐ W toku' : '○ Do zrobienia'}</span></div>`}</div>`;
   }
 
   function eventCard(e) {

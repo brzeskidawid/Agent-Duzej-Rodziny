@@ -228,3 +228,9 @@ form textarea{min-height:80px;resize:vertical}
 .mention-btns{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .chip.mention{background:#0ea5e9;color:#fff;font-weight:600}
 .cal-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.75rem;color:var(--muted);margin:8px 2px 0}
+
+/* ---------- status zadania (po prawej) ---------- */
+.status{display:inline-block;font-size:.8rem;font-weight:700;padding:5px 10px;border-radius:999px;white-space:nowrap}
+.status.st-todo{background:var(--line);color:var(--muted)}
+.status.st-doing{background:color-mix(in srgb,var(--warn),transparent 80%);color:var(--warn)}
+.status.st-done{background:color-mix(in srgb,var(--ok),transparent 82%);color:var(--ok)}
