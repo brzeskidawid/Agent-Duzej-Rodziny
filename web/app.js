@@ -531,7 +531,7 @@
         <div class="meta">${!board ? (doing ? '<span class="chip doing">W toku</span>' : t.status === 'done' ? '<span class="chip" style="color:var(--ok);font-weight:600">✓ Zrobione</span>' : '<span class="chip">Do zrobienia</span>') : ''}${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wpisu</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
       </div>
-      ${board ? moves : (t.status === 'done' ? '' : `<div class="actions"><button class="btn sm" data-act="cycle" title="Zmień status">${doing ? '↩ do zrobienia' : '▶ w toku'}</button></div>`)}</div>`;
+      ${board ? moves : (t.status === 'done' ? '' : `<div class="actions"><button class="btn sm" data-act="cycle" title="Zmień status">Przenieś → ${doing ? 'Do zrobienia' : 'W toku'}</button></div>`)}</div>`;
   }
 
   function eventCard(e) {
