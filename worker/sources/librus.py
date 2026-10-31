@@ -108,6 +108,7 @@ class LibrusSource(Source):
         self.login = login
         self.password = password
         self.child_name = child_name or None
+        self._date_diag_done = False
 
     # ------------------------------------------------------------------ public
     def fetch(self) -> tuple[list[Item], list[Event]]:
@@ -176,10 +177,21 @@ class LibrusSource(Source):
                         if ext in known:
                             continue  # już w bazie — nie dotykamy (nie pobieramy ponownie)
                         body, raw = _clean(m.content), None
+                        sent = _dt(m.send_date)
                         try:
                             full = await lib.message(m.id, "inbox")
                             if full:
                                 body = _clean(full.content) or body
+                                sent = sent or _dt(full.send_date)
+                                if sent is None and not self._date_diag_done:
+                                    self._date_diag_done = True
+                                    try:
+                                        rawmsg = await lib.client.async_get_message("inbox", m.id)
+                                        data = rawmsg.get("data", rawmsg) if isinstance(rawmsg, dict) else rawmsg
+                                        keys = {k: v for k, v in (data or {}).items() if "date" in k.lower() or "time" in k.lower()}
+                                        log.warning("Librus: brak daty wysłania w wiadomości %s; pola z datą w odpowiedzi: %s", m.id, keys)
+                                    except Exception as e:
+                                        log.warning("Librus: diagnostyka daty nieudana: %s", e)
                                 files = []
                                 for att in full.attachments:
                                     path = await self._save_attachment(
@@ -196,7 +208,7 @@ class LibrusSource(Source):
                             source="librus", external_id=ext, kind="message",
                             title=_clean(m.topic, 300) or "(bez tematu)",
                             body=body, sender=m.sender_name or None,
-                            published_at=_dt(m.send_date), child_name=child,
+                            published_at=sent, child_name=child,
                             url=f"{LIBRUS_URL}/wiadomosci", raw=raw,
                         ))
                 except Exception as e:  # jedna sekcja nie może położyć reszty

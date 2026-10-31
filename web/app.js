@@ -288,9 +288,9 @@
   // ---- WPISY
   function kindMatch(i, k) {
     if (!k) return i.kind !== 'grade';
-    if (k === 'message') return i.kind === 'message';
+    if (k === 'message') return i.kind === 'message' && !TEST_RE.test(i.title);
     if (k === 'homework') return i.kind === 'homework' || (i.kind === 'event' && HOMEWORK_RE.test(i.sender || ''));
-    if (k === 'test') return i.kind === 'event' && TEST_RE.test(i.sender || '') && !HOMEWORK_RE.test(i.sender || '');
+    if (k === 'test') return (i.kind === 'event' && TEST_RE.test(i.sender || '') && !HOMEWORK_RE.test(i.sender || '')) || (i.kind === 'message' && TEST_RE.test(i.title));
     if (k === 'other') return i.kind !== 'grade' && !kindMatch(i, 'message') && !kindMatch(i, 'homework') && !kindMatch(i, 'test');
     return true;
   }
