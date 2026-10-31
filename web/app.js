@@ -360,7 +360,7 @@
       h += `<div class="${cls}" data-day="${k}"><div class="dn">${d.getDate()}</div>` + list.slice(0, max).map(x => {
         const obj = x.kind === 'item' ? x.i : x.e; const c = child(obj.child_id); const isTest = x.ck === 'test';
         const trip = /wycieczk|wyjazd|wyjści|kino|teatr|muzeum/i.test(obj.title);
-        const ico = isTest ? '<span class="pi">!</span>' : x.ck === 'homework' ? '📚 ' : trip ? '🚗 ' : '';
+        const ico = isTest ? '<span class="pi">!</span>' : x.ck === 'homework' ? '📚 ' : trip ? '🚗 ' : '📣 ';
         const label = obj.title.replace(/^[^:·]*·\s*/, '');
         return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${ico}${esc(label)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
