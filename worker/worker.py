@@ -149,7 +149,7 @@ def main() -> int:
     ap.add_argument("--loop", action="store_true", help="działaj w pętli co INTERVAL_MINUTES")
     args = ap.parse_args()
 
-    load_dotenv()
+    load_dotenv(interpolate=False)  # hasło ze znakiem $ nie jest podmieniane
     env = dict(os.environ)
     logging.basicConfig(level=env.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 

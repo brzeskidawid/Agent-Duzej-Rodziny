@@ -103,18 +103,34 @@ class FourParentsSource(Source):
         })
 
     # ------------------------------------------------------------------ API
+    FAIL_MSG = {
+        "invalidCredentials": "nieprawidłowy e-mail lub hasło. Użyj dokładnie tych danych, którymi logujecie się w aplikacji 4Parents (konto jest zwykle na Karolinę, nie na Ciebie)",
+        "accountLocked": "konto tymczasowo zablokowane po nieudanych próbach — odczekaj kilkanaście minut",
+        "accountInactive": "konto nieaktywne — dokończ aktywację w portalu",
+        "userBlocked": "konto zablokowane przez placówkę",
+        "twoFactorRequired": "konto ma włączone uwierzytelnianie dwuskładnikowe (2FA) — wyłącz je w profilu albo daj znać, dopiszę obsługę kodu",
+    }
+
     def _auth(self) -> None:
-        r = self.s.post(f"{API}/users/authenticate", json={"login": self.login, "password": self.password}, timeout=TIMEOUT)
-        if r.status_code in (400, 401, 403):
-            raise RuntimeError("4Parents: nieprawidłowy login lub hasło (sprawdź FOURPARENTS_LOGIN / FOURPARENTS_PASSWORD w .env)")
-        r.raise_for_status()
-        data = r.json()
+        r = self.s.post(f"{API}/users/authenticate",
+                        json={"login": self.login.strip(), "password": self.password},
+                        timeout=TIMEOUT)
+        try:
+            data = r.json()
+        except ValueError:
+            data = {}
         token = data.get("token")
-        if not token:
-            if data.get("challengeToken"):
-                raise RuntimeError("4Parents: konto ma włączone uwierzytelnianie dwuskładnikowe (2FA) — wyłącz je albo daj znać, dopiszę obsługę")
-            raise RuntimeError(f"4Parents: logowanie bez tokenu w odpowiedzi: {str(data)[:200]}")
-        self.s.headers["Authorization"] = "Bearer " + token
+        if token:
+            self.s.headers["Authorization"] = "Bearer " + token
+            if data.get("acceptanceRequired"):
+                log.warning("4Parents: w portalu czeka regulamin do zaakceptowania")
+            return
+        if data.get("challengeToken") or data.get("failureReason") == "twoFactorRequired":
+            raise RuntimeError("4Parents: " + self.FAIL_MSG["twoFactorRequired"])
+        reason = data.get("failureReason")
+        if reason:
+            raise RuntimeError(f"4Parents: {self.FAIL_MSG.get(reason, 'logowanie odrzucone (' + str(reason) + ')')}")
+        raise RuntimeError(f"4Parents: logowanie nieudane (HTTP {r.status_code}): {r.text[:200]}")
 
     def _get(self, path: str):
         r = self.s.get(API + path, timeout=TIMEOUT)
