@@ -65,7 +65,7 @@ s.headers.update({"Accept": "application/json", "Content-Type": "application/jso
 for label, pwd in cands:
     if not pwd:
         continue
-    r = s.post(f"{API}/users/authenticate", json={"login": login.strip(), "password": pwd}, timeout=30)
+    r = s.post(f"{API}/users/authenticate", json={"userName": login.strip(), "password": pwd}, timeout=30)
     try:
         d = r.json()
     except ValueError:

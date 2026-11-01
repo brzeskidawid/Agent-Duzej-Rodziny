@@ -112,8 +112,9 @@ class FourParentsSource(Source):
     }
 
     def _auth(self) -> None:
+        # Portal 4Parents wysyła pole "userName" (nie "login") — sprawdzone na żywym żądaniu.
         r = self.s.post(f"{API}/users/authenticate",
-                        json={"login": self.login.strip(), "password": self.password},
+                        json={"userName": self.login.strip(), "password": self.password},
                         timeout=TIMEOUT)
         try:
             data = r.json()
