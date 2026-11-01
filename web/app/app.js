@@ -629,15 +629,15 @@
       return `<div class="card sender ${val ? '' : 'todo'}" style="border-left-color:${c ? c.color : (val === 'all' ? '#64748b' : 'var(--warn)')}">
         <div class="grow">
           <div class="title">${esc(r.sender)}</div>
-          <div class="meta"><span>${r.n} ${r.n === 1 ? 'wiadomość' : 'wiadomości'}</span>${r.last ? `<span>ostatnia ${fmtDate(r.last)}</span>` : ''}</div>
-          ${r.lastTitle ? `<div class="body">„${esc(r.lastTitle.slice(0, 90))}${r.lastTitle.length > 90 ? '…' : ''}"</div>` : ''}
+          <div class="meta"><span>${r.n} ${r.n === 1 ? 'wiadomość' : 'wiadomości'} w aplikacji</span>${r.last ? `<span>ostatnia ${fmtDate(r.last)}</span>` : ''}</div>
+          ${r.lastTitle ? `<div class="body muted">ostatnio: „${esc(r.lastTitle.slice(0, 70))}${r.lastTitle.length > 70 ? '…' : ''}"</div>` : ''}
         </div>
-        <div class="actions"><select data-sender="${esc(r.sender)}">${opts}</select></div></div>`;
+        <div class="actions sel-wrap"><span class="sel-label">wszystkie jej wiadomości dotyczą</span><select data-sender="${esc(r.sender)}">${opts}</select></div></div>`;
     };
 
     const todo = list.filter(r => !ruleOf(r.sender));
     const ok = list.filter(r => ruleOf(r.sender));
-    const h = `<p class="hint">4Parents nie zaznacza, którego dziecka dotyczy wiadomość — większość ogłoszeń idzie do całego przedszkola. Ustaw tu raz, kogo dotyczą wiadomości od danej osoby; reguła zadziała też wstecz. Gdy zmieni się opiekunka, poprawiasz jedną pozycję.</p>
+    const h = `<p class="hint"><b>Reguły ogólne — jedna na osobę, nie na wiadomość.</b> 4Parents nie zaznacza, którego dziecka dotyczy wpis, więc ustalasz to raz dla nadawcy: wszystkie wiadomości od tej osoby, <b>dotychczasowe i przyszłe</b>, dostaną wybrane dziecko. Siostry piszące do całego przedszkola ustaw na „🏫 całe przedszkole". Gdy zmieni się opiekunka, poprawiasz jedną pozycję. Liczba wiadomości i podgląd służą tylko rozpoznaniu, kto to jest.</p>
       <div class="sum">Przypisane: <b>${done} z ${list.length}</b> nadawców · obejmuje <b>${covered} z ${total}</b> wiadomości</div>`
       + (todo.length ? `<div class="section-title">Do ustawienia (${todo.length})</div>` + todo.map(row).join('') : `<div class="empty">Wszyscy nadawcy przypisani ✓</div>`)
       + (ok.length ? `<div class="section-title">Ustawione (${ok.length})</div>` + ok.map(row).join('') : '');
