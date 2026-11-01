@@ -260,3 +260,7 @@ form textarea{min-height:80px;resize:vertical}
 .search:focus{outline:2px solid var(--accent);outline-offset:1px}
 .tile.dimmed{opacity:.4}
 .chip.today{background:color-mix(in srgb,var(--ok),transparent 80%);color:var(--ok);font-weight:600}
+.chip.school{background:color-mix(in srgb,#64748b,transparent 82%);color:#64748b;font-weight:600}
+.rules{max-height:44vh;overflow:auto;margin-top:6px}
+.rules li{gap:8px}
+.rules select{max-width:46%;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-size:.85rem}

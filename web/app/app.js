@@ -33,6 +33,7 @@
     calSel: dateKey(new Date()),
     calChild: '',
     calKind: '',
+    senderRules: new Map(),
     comments: [],
     commentReads: new Set(),
     openId: null,
@@ -190,7 +191,7 @@
   // -------------------------------------------------------------- data
   async function loadAll() {
     const since = new Date(); since.setDate(since.getDate() - 60);
-    const [ch, ta, ev, it, rd, ms, tc, cr, cp] = await Promise.all([
+    const [ch, ta, ev, it, rd, ms, tc, cr, cp, sr] = await Promise.all([
       sb.from('children').select('*').order('sort_order').order('name'),
       sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'),
       sb.from('events').select('*').order('starts_at'),
@@ -200,12 +201,14 @@
       sb.from('task_comments').select('*').order('created_at'),
       sb.from('comment_reads').select('comment_id').eq('user_id', S.me.user_id),
       sb.from('task_completions').select('task_id,day'),
+      sb.from('sender_rules').select('*'),
     ]);
     for (const r of [ch, ta, ev, it, rd, ms]) if (r.error) return fail(r.error);
     S.children = ch.data; S.tasks = ta.data; S.events = ev.data; S.items = it.data;
     S.reads = new Set(rd.data.map(r => r.item_id)); S.messages = ms.data.reverse();
     S.comments = tc.error ? [] : tc.data; S.commentReads = new Set(cr.error ? [] : cr.data.map(r => r.comment_id));
     S.completions = new Set(cp.error ? [] : cp.data.map(r => `${r.task_id}|${r.day}`));
+    S.senderRules = new Map((sr.error ? [] : sr.data).map(r => [`${r.source}|${r.sender}`, r]));
   }
 
   function subscribeRealtime() {
@@ -214,6 +217,7 @@
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async () => { const { data } = await sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'); if (data) { S.tasks = data; render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => { const { data } = await sb.from('events').select('*').order('starts_at'); if (data) { S.events = data; render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, async () => { const { data } = await sb.from('task_comments').select('*').order('created_at'); if (data) { S.comments = data; if (S.openId) refreshComments(S.openId); render(); } })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sender_rules' }, async () => { const { data } = await sb.from('sender_rules').select('*'); if (data) { S.senderRules = new Map(data.map(r => [`${r.source}|${r.sender}`, r])); render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_completions' }, async () => { const { data } = await sb.from('task_completions').select('task_id,day'); if (data) { S.completions = new Set(data.map(r => `${r.task_id}|${r.day}`)); render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, async () => { const { data } = await sb.from('items').select('*').order('published_at', { ascending: false }).limit(300); if (data) { S.items = data; render(); } })
       .subscribe();
@@ -377,6 +381,10 @@
     const okChild = cid => !S.calChild || cid === S.calChild;
     const okKind = k => !S.calKind || k === S.calKind;
     for (const e of S.events) { const k = calKindOf(e.title, ''); if (okChild(e.child_id) && okKind(k)) push(dateKey(e.starts_at), { kind: 'event', ck: k, when: new Date(e.starts_at), e }); }
+    // Zadania przedszkolne pokazujemy TYLKO po wybraniu ich kategorii — inaczej zalałyby kalendarz.
+    if (S.calKind === 'kinder') {
+      for (const i of S.items) if (isKinderTask(i) && okChildItem(i, S.calChild)) push(dateKey(i.occurred_at), { kind: 'item', ck: 'kinder', when: new Date(i.occurred_at), i });
+    }
     for (const i of S.items) if (i.kind === 'message' && i.occurred_at && TEST_RE.test(i.title) && okChild(i.child_id) && okKind('test')) {
       const kw = (i.title.match(TEST_RE) || [''])[0].toLowerCase().slice(0, 5);
       const dup = S.events.some(e => e.child_id === i.child_id && dateKey(e.starts_at) === dateKey(i.occurred_at) && e.title.toLowerCase().includes(kw));
@@ -390,14 +398,14 @@
       const cls = ['day', d.getMonth() !== m0.getMonth() ? 'other' : '', k === todayKey ? 'today' : '', k === S.calSel ? 'sel' : '', d.getDay() === 0 || d.getDay() === 6 ? 'weekend' : ''].join(' ');
       const max = 4;
       h += `<div class="${cls}" data-day="${k}"><div class="dn">${d.getDate()}</div>` + list.slice(0, max).map(x => {
-        const obj = x.kind === 'item' ? x.i : x.e; const c = child(obj.child_id); const isTest = x.ck === 'test';
+        const obj = x.kind === 'item' ? x.i : x.e; const c = child(x.kind === 'item' ? effChild(obj) : obj.child_id); const isTest = x.ck === 'test';
         const trip = /wycieczk|wyjazd|wyjści|kino|teatr|muzeum/i.test(obj.title);
-        const ico = isTest ? '<span class="pi">!</span>' : x.ck === 'homework' ? '📚 ' : trip ? '🚗 ' : '📣 ';
+        const ico = isTest ? '<span class="pi">!</span>' : x.ck === 'kinder' ? '🧸 ' : x.ck === 'homework' ? '📚 ' : trip ? '🚗 ' : '📣 ';
         const label = obj.title.replace(/^[^:·]*·\s*/, '');
         return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${ico}${esc(label)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
     }
-    h += '</div><div class="cal-legend"><span><span class="pi">!</span>sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>🚗 wycieczka / wyjście</span><span>📣 inne</span><span>kolor = dziecko</span></div>';
+    h += '</div><div class="cal-legend"><span><span class="pi">!</span>sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>🚗 wycieczka / wyjście</span><span>📣 inne</span><span>🧸 zadania przedszkolne (osobny kafelek)</span><span>kolor = dziecko</span></div>';
     $('#calendar-content').innerHTML = h;
     $('#calendar-content').onclick = e => { const d = e.target.closest('[data-day]'); if (!d) return; S.calSel = d.dataset.day; render(); };
     $('#cal-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.calChild = b.dataset.child; render(); };
@@ -478,6 +486,16 @@
     });
   }
 
+  // ---- KTO PISZE O KIM -------------------------------------------------
+  // 4Parents nie oznacza, kogo dotyczy wpis (140 ze 150 ogłoszeń idzie "do wszystkich"),
+  // więc dziecko bierzemy z reguły przypisanej do nadawcy w Ustawieniach.
+  const KINDER_TASK_RE = /przyni|przynie[śs]|prosz[ęe] o |zabra[ćc]|potrzebn|ubra|str[óo]j|przebra|wp[łl]at|kostium/i;
+  function senderRule(i) { return i.sender ? S.senderRules.get(`${i.source}|${i.sender}`) : null; }
+  function effChild(i) { if (i.child_id) return i.child_id; const r = senderRule(i); return r && r.scope === 'child' ? r.child_id : null; }
+  function wholeSchool(i) { const r = senderRule(i); return !i.child_id && !!r && r.scope === 'all'; }
+  function okChildItem(i, cid) { if (!cid) return true; const e = effChild(i); return e ? e === cid : wholeSchool(i); }
+  function isKinderTask(i) { return i.source === '4parents' && !!i.occurred_at && KINDER_TASK_RE.test(`${i.title} ${i.body || ''}`); }
+
   // ---- WPISY
   function isArchived(i) {
     if (!i.occurred_at) return false;
@@ -512,12 +530,12 @@
     // szukanie obejmuje WSZYSTKIE wiadomości, także archiwum — inaczej łatwo przeoczyć starszy wpis
     if (q) {
       let found = S.items.filter(i => i.kind !== 'grade' && !twinEventItem(i) && matchesQuery(i, q));
-      if (S.itemsChild) found = found.filter(i => i.child_id === S.itemsChild);
+      if (S.itemsChild) found = found.filter(i => okChildItem(i, S.itemsChild));
       return found.sort((a, b) => new Date(b.occurred_at || b.published_at || 0) - new Date(a.occurred_at || a.published_at || 0));
     }
     let list = S.items.filter(i => kindMatch(i, S.itemsKind) && !twinEventItem(i));
     if (S.itemsFilter === 'unread') list = list.filter(i => !S.reads.has(i.id));
-    if (S.itemsChild) list = list.filter(i => i.child_id === S.itemsChild);
+    if (S.itemsChild) list = list.filter(i => okChildItem(i, S.itemsChild));
     return list;
   }
 
@@ -705,12 +723,12 @@
   }
 
   function itemCard(i) {
-    const c = child(i.child_id); const col = c ? c.color : 'var(--line)';
+    const ec = effChild(i); const c = child(ec); const col = c ? c.color : 'var(--line)';
     const unread = !S.reads.has(i.id);
     return `<div class="card ${unread ? 'unread' : ''} ${S.openId === i.id ? 'sel' : ''}" style="border-left-color:${col}" data-item="${i.id}">
       <div class="grow clickable" data-act="open-item">
         <div class="title">${unread ? '● ' : ''}${esc(i.title)}</div>
-        <div class="meta">${childChip(i.child_id)}<span>${KIND_LABEL[i.kind] || i.kind} · ${SOURCE_LABEL[i.source] || i.source}</span>${i.sender ? `<span>od: ${esc(i.sender)}</span>` : ''}<span>${fmtDateTime(i.published_at)}</span>${i.occurred_at ? `<span>⏰ ${fmtDate(i.occurred_at)}</span>` : ''}</div>
+        <div class="meta">${childChip(ec)}${wholeSchool(i) ? '<span class="chip school">🏫 całe przedszkole</span>' : ''}<span>${KIND_LABEL[i.kind] || i.kind} · ${SOURCE_LABEL[i.source] || i.source}</span>${i.sender ? `<span>od: ${esc(i.sender)}</span>` : ''}<span>${fmtDateTime(i.published_at)}</span>${i.occurred_at ? `<span>⏰ ${fmtDate(i.occurred_at)}</span>` : ''}</div>
       </div>
       <div class="actions">${(() => { const tm = twinMessage(i); return tm ? `<button class="btn sm" data-act="open-twin" data-item-id="${tm.id}" title="${esc(tm.sender || '')}">💬 wiadomość${S.reads.has(tm.id) ? '' : ' ●'}</button>` : ''; })()}${S.tasks.some(t => t.item_id === i.id) ? `<button class="btn sm" data-act="goto-task" data-task-id="${S.tasks.find(t => t.item_id === i.id).id}">↗ zadanie</button>` : `<button class="btn sm" data-act="item-to-task">→ zadanie</button>`}</div></div>`;
   }
@@ -961,14 +979,53 @@
       <h3 style="margin:8px 0">Dzieci</h3>
       <ul class="list-plain" id="kids">${S.children.map(c => `<li><span class="dot" style="background:${c.color};width:14px;height:14px"></span><span style="flex:1">${esc(c.name)} <span class="muted">${esc(c.institution || '')}</span></span><button class="btn sm" data-edit="${c.id}">Edytuj</button></li>`).join('') || '<li class="muted">Brak dzieci — dodaj pierwsze.</li>'}</ul>
       <button class="btn" id="add-kid" style="margin-top:10px">+ Dodaj dziecko</button>
+      <h3 style="margin:22px 0 8px">Kto pisze o kim</h3>
+      <p class="hint">4Parents nie zaznacza, którego dziecka dotyczy wpis — większość ogłoszeń idzie do całego przedszkola. Ustaw tu raz, kogo dotyczą wiadomości od danej osoby. Przy zmianie opiekunki wystarczy poprawić jedną pozycję.</p>
+      <ul class="list-plain rules" id="sender-rules">${senderRows()}</ul>
       <h3 style="margin:22px 0 8px">Rodzina</h3>
       <ul class="list-plain">${S.members.map(m => `<li><span class="dot" style="background:${m.color};width:14px;height:14px"></span><span style="flex:1">${esc(m.display_name)}${m.user_id === S.me.user_id ? ' (ja)' : ''}</span></li>`).join('')}</ul>
       <p class="muted" style="font-size:.85rem">Zalogowano jako ${esc(S.user.email)}.</p>
       <button class="btn" id="logout">Wyloguj</button>
       <p class="muted" style="font-size:.75rem;margin-top:18px">Agent Dużej Rodziny · ${S.items.length} wiadomości, ${S.tasks.length} zadań, ${S.events.length} wydarzeń</p>`);
+    $$('#sender-rules select').forEach(sel => sel.onchange = () => saveSenderRule(sel.dataset.source, sel.dataset.sender, sel.value));
     $('#add-kid').onclick = () => openChildForm({});
     $$('#kids [data-edit]').forEach(b => b.onclick = () => openChildForm(child(b.dataset.edit)));
     $('#logout').onclick = () => sb.auth.signOut();
+  }
+
+  // lista nadawców z liczbą wiadomości i wyborem, kogo dotyczą
+  function senderRows() {
+    const cnt = new Map();
+    for (const i of S.items) {
+      if (!i.sender) continue;
+      const k = `${i.source}|${i.sender}`;
+      cnt.set(k, (cnt.get(k) || 0) + 1);
+    }
+    if (!cnt.size) return '<li class="muted">Brak nadawców — pojawią się po pobraniu wiadomości.</li>';
+    return [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => {
+      const cut = k.indexOf('|'); const source = k.slice(0, cut); const sender = k.slice(cut + 1);
+      const r = S.senderRules.get(k);
+      const val = r ? (r.scope === 'all' ? 'all' : (r.child_id || '')) : '';
+      const opts = [['', '— nie przypisuj —'], ['all', '🏫 całe przedszkole']]
+        .concat(S.children.map(c => [c.id, c.name]))
+        .map(([v, l]) => `<option value="${esc(v)}" ${val === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
+      return `<li><span style="flex:1">${esc(sender)} <span class="muted">${SOURCE_LABEL[source] || source} · ${n}</span></span>
+        <select data-source="${esc(source)}" data-sender="${esc(sender)}">${opts}</select></li>`;
+    }).join('');
+  }
+
+  async function saveSenderRule(source, sender, val) {
+    const key = `${source}|${sender}`;
+    if (!val) {
+      S.senderRules.delete(key); render();
+      const { error } = await sb.from('sender_rules').delete().eq('source', source).eq('sender', sender);
+      return error && fail(error);
+    }
+    const row = { source, sender, scope: val === 'all' ? 'all' : 'child', child_id: val === 'all' ? null : val, updated_by: S.me.user_id, updated_at: new Date().toISOString() };
+    S.senderRules.set(key, row); render();
+    const { error } = await sb.from('sender_rules').upsert(row, { onConflict: 'source,sender' });
+    if (error) return fail(error);
+    toast('Zapisano regułę');
   }
 
   function openChildForm(c) {
