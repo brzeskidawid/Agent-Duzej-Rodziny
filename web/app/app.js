@@ -494,7 +494,12 @@
   const KINDER_TASK_RE = /przyni|przynie[śs]|prosz[ęe] o |zabra[ćc]|potrzebn|ubra|str[óo]j|przebra|wp[łl]at|kostium/i;
   function senderRule(i) { return i.sender ? S.senderRules.get(`${i.source}|${i.sender}`) : null; }
   function effChild(i) { if (i.child_id) return i.child_id; const r = senderRule(i); return r && r.scope === 'child' ? r.child_id : null; }
-  function wholeSchool(i) { const r = senderRule(i); return !i.child_id && !!r && r.scope === 'all'; }
+  function wholeSchool(i) {
+    if (i.child_id) return false;
+    const r = senderRule(i);
+    if (r && r.scope === 'child') return false;
+    return i.source === '4parents';
+  }
   function okChildItem(i, cid) { if (!cid) return true; const e = effChild(i); return e ? e === cid : wholeSchool(i); }
   function isKinderTask(i) { return i.source === '4parents' && !!i.occurred_at && KINDER_TASK_RE.test(`${i.title} ${i.body || ''}`); }
   // Tytuł wpisu z przedszkola to zwykle "Drodzy Rodzice!" — na pigułce w kalendarzu
@@ -643,7 +648,7 @@
         .concat(S.children.filter(k => k.institution === 'szkoła').map(k => [k.id, k.name + ' (szkoła)']))
         .concat([['inactive', '🚫 nieaktywny pracownik']])
         .map(([v, l]) => `<option value="${esc(v)}" ${val === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
-      return `<div class="card sender ${val ? '' : 'todo'} ${val === 'inactive' ? 'off' : ''}" style="border-left-color:${c ? c.color : val === 'all' ? '#64748b' : val === 'inactive' ? 'var(--line)' : 'var(--warn)'}">
+      return `<div class="card sender ${val === 'inactive' ? 'off' : ''}" style="border-left-color:${c ? c.color : val === 'inactive' ? 'var(--line)' : '#64748b'}">
         <div class="grow">
           <div class="title">${esc(r.sender)}</div>
           <div class="meta"><span>${r.n} ${r.n === 1 ? 'wiadomość' : 'wiadomości'} w aplikacji</span>${r.last ? `<span>ostatnia ${fmtDate(r.last)}</span>` : ''}</div>
@@ -656,14 +661,15 @@
     const todo = list.filter(r => !scopeOf(r));
     const ok = list.filter(r => ['child', 'all'].includes(scopeOf(r)));
     const off = list.filter(r => scopeOf(r) === 'inactive');
-    const h = `<p class="hint"><b>Reguły ogólne — jedna na osobę, nie na wiadomość.</b> 4Parents nie zaznacza, którego dziecka dotyczy wpis, więc ustalasz to raz dla nadawcy: wszystkie wiadomości od tej osoby, <b>dotychczasowe i przyszłe</b>, dostaną wybrane dziecko. Siostry piszące do całego przedszkola ustaw na „🏫 całe przedszkole". Gdy zmieni się opiekunka, poprawiasz jedną pozycję. Liczba wiadomości i podgląd służą tylko rozpoznaniu, kto to jest.</p>
-      <div class="sum">Przypisane: <b>${done} z ${list.length - offCount}</b> aktywnych nadawców · obejmuje <b>${covered} z ${total}</b> wiadomości</div>`
+    const h = `<p class="hint"><b>Reguły ogólne — jedna na osobę, nie na wiadomość.</b> 4Parents nie zaznacza, którego dziecka dotyczy wpis, więc ustalasz to raz dla nadawcy: wszystkie wiadomości od tej osoby, <b>dotychczasowe i przyszłe</b>, dostaną wybrane dziecko. Gdy zmieni się opiekunka, poprawiasz jedną pozycję. Liczba wiadomości i podgląd służą tylko rozpoznaniu, kto to jest.</p>
+      <div class="sum ok">✓ <b>Nic nie ginie.</b> Wiadomość bez przypisanego nadawcy jest traktowana jako „🏫 całe przedszkole" — widzisz ją przy każdym dziecku. Mapowanie nie jest obowiązkowe: służy tylko temu, żeby <b>zawęzić</b> wiadomości do jednego dziecka.</div>
+      <div class="sum">Zawężone do dziecka: <b>${done} z ${list.length - offCount}</b> aktywnych nadawców · <b>${covered} z ${total}</b> wiadomości</div>`
       + (todo.length ? (() => {
           const cut = schoolYearStart();
           const stare = todo.filter(r => !r.last || new Date(r.last) < cut);
           const nowe = todo.filter(r => r.last && new Date(r.last) >= cut);
-          return (nowe.length ? `<div class="section-title">Bez przypisania — piszą w tym roku szkolnym (${nowe.length})</div>` + nowe.map(row).join('') : '')
-            + (stare.length ? `<div class="section-title">Bez przypisania — cisza od ${fmtDate(cut)} (${stare.length})</div>`
+          return (nowe.length ? `<div class="section-title">Warto zawęzić — piszą w tym roku szkolnym (${nowe.length})</div>` + nowe.map(row).join('') : '')
+            + (stare.length ? `<div class="section-title">Cisza od ${fmtDate(cut)} (${stare.length})</div>`
                 + `<p class="hint">Nic nie napisali w tym roku szkolnym, więc to najpewniej byli pracownicy. Możesz ich odhaczyć jednym kliknięciem — pojedyncze pozycje zawsze da się potem zmienić.</p>`
                 + `<button class="btn" id="bulk-off" style="margin-bottom:10px">🚫 Oznacz tych ${stare.length} jako nieaktywnych</button>`
                 + stare.map(row).join('') : '');

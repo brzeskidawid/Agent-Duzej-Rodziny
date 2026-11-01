@@ -264,10 +264,10 @@ form textarea{min-height:80px;resize:vertical}
 .sum{font-size:.9rem;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0 4px}
 .card.sender .actions{align-items:center}
 .card.sender select{min-width:170px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-size:.88rem}
-.card.sender.todo{background:color-mix(in srgb,var(--warn),transparent 94%)}
 @media(max-width:640px){.card.sender{flex-wrap:wrap}.card.sender select{min-width:0;width:100%}}
 .sel-wrap{flex-direction:column;align-items:flex-end;gap:4px}
 .sel-label{font-size:.72rem;color:var(--muted);text-align:right}
 @media(max-width:640px){.sel-wrap{align-items:stretch;width:100%}.sel-label{text-align:left}}
 .card.sender.off{opacity:.55}
 .card.sender.off .title{text-decoration:line-through}
+.sum.ok{background:color-mix(in srgb,var(--ok),transparent 90%);border-color:transparent}
