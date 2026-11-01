@@ -241,6 +241,8 @@
     $$('#items-filter button').forEach(b => b.onclick = () => { S.itemsFilter = b.dataset.f; render(); });
     $('#mark-all-read').onclick = markAllRead;
     $('#items-search').oninput = e => { S.itemsQuery = e.target.value; render(); };
+    $('#go-senders').onclick = () => setView('senders');
+    $('#senders-back').onclick = () => setView('items');
     $('#items-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.itemsChild = b.dataset.child; render(); };
     $$('#items-kind .tile').forEach(b => b.onclick = () => { S.itemsKind = S.itemsKind === b.dataset.k ? '' : b.dataset.k; render(); });
     $('#grades-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.gradesChild = b.dataset.child; render(); };
@@ -294,7 +296,7 @@
       if (b.dataset.k === 'archive') { c.textContent = all.length ? `${all.length}` : '—'; c.classList.remove('new'); }
       else { c.textContent = nw ? `${nw} nowe` : (all.length ? `${all.length}` : '—'); c.classList.toggle('new', nw > 0); }
     });
-    ({ today: renderToday, calendar: renderCalendar, tasks: renderTasks, items: renderItems, grades: renderGrades, chat: renderChat })[S.view]();
+    ({ today: renderToday, calendar: renderCalendar, tasks: renderTasks, items: renderItems, grades: renderGrades, chat: renderChat, senders: renderSenders })[S.view]();
   }
 
   function renderBadges() {
@@ -586,6 +588,62 @@
     $('#items-summary').textContent = list.length ? `${list.length} wiadomości${nw ? ` · ${nw} nowych` : ''}` : '';
     const sq = $('#items-search'); if (document.activeElement !== sq && sq.value !== S.itemsQuery) sq.value = S.itemsQuery;
     wireCards($('#items-content'));
+  }
+
+  // ---- MAPOWANIE NADAWCÓW -----------------------------------------------
+  // Pomijamy domowników — Karolina jest właścicielką konta, więc jej wiadomości
+  // są wychodzące, nie od przedszkola.
+  function isHousehold(name) {
+    const n = norm(name);
+    return S.members.some(m => n.includes(norm(m.display_name))) || /brzesk/i.test(name);
+  }
+
+  function senderStats() {
+    const by = new Map();
+    for (const i of S.items) {
+      if (i.source !== '4parents' || !i.sender || isHousehold(i.sender)) continue;
+      let r = by.get(i.sender);
+      if (!r) { r = { sender: i.sender, n: 0, last: null, lastTitle: '' }; by.set(i.sender, r); }
+      r.n++;
+      const d = i.published_at || i.occurred_at;
+      if (d && (!r.last || new Date(d) > new Date(r.last))) { r.last = d; r.lastTitle = i.title; }
+    }
+    return [...by.values()].sort((a, b) => b.n - a.n);
+  }
+
+  function renderSenders() {
+    const list = senderStats();
+    const ruleOf = s0 => S.senderRules.get(`4parents|${s0}`);
+    const done = list.filter(r => ruleOf(r.sender)).length;
+    const covered = list.filter(r => ruleOf(r.sender)).reduce((a, r) => a + r.n, 0);
+    const total = list.reduce((a, r) => a + r.n, 0);
+
+    const row = r => {
+      const rl = ruleOf(r.sender);
+      const val = rl ? (rl.scope === 'all' ? 'all' : (rl.child_id || '')) : '';
+      const c = rl && rl.scope === 'child' ? child(rl.child_id) : null;
+      const opts = [['', '— nie przypisano —'], ['all', '🏫 całe przedszkole']]
+        .concat(S.children.filter(k => k.institution !== 'szkoła').map(k => [k.id, k.name]))
+        .concat(S.children.filter(k => k.institution === 'szkoła').map(k => [k.id, k.name + ' (szkoła)']))
+        .map(([v, l]) => `<option value="${esc(v)}" ${val === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
+      return `<div class="card sender ${val ? '' : 'todo'}" style="border-left-color:${c ? c.color : (val === 'all' ? '#64748b' : 'var(--warn)')}">
+        <div class="grow">
+          <div class="title">${esc(r.sender)}</div>
+          <div class="meta"><span>${r.n} ${r.n === 1 ? 'wiadomość' : 'wiadomości'}</span>${r.last ? `<span>ostatnia ${fmtDate(r.last)}</span>` : ''}</div>
+          ${r.lastTitle ? `<div class="body">„${esc(r.lastTitle.slice(0, 90))}${r.lastTitle.length > 90 ? '…' : ''}"</div>` : ''}
+        </div>
+        <div class="actions"><select data-sender="${esc(r.sender)}">${opts}</select></div></div>`;
+    };
+
+    const todo = list.filter(r => !ruleOf(r.sender));
+    const ok = list.filter(r => ruleOf(r.sender));
+    const h = `<p class="hint">4Parents nie zaznacza, którego dziecka dotyczy wiadomość — większość ogłoszeń idzie do całego przedszkola. Ustaw tu raz, kogo dotyczą wiadomości od danej osoby; reguła zadziała też wstecz. Gdy zmieni się opiekunka, poprawiasz jedną pozycję.</p>
+      <div class="sum">Przypisane: <b>${done} z ${list.length}</b> nadawców · obejmuje <b>${covered} z ${total}</b> wiadomości</div>`
+      + (todo.length ? `<div class="section-title">Do ustawienia (${todo.length})</div>` + todo.map(row).join('') : `<div class="empty">Wszyscy nadawcy przypisani ✓</div>`)
+      + (ok.length ? `<div class="section-title">Ustawione (${ok.length})</div>` + ok.map(row).join('') : '');
+    const root = $('#senders-content');
+    root.innerHTML = h;
+    root.querySelectorAll('select').forEach(sel => sel.onchange = () => saveSenderRule('4parents', sel.dataset.sender, sel.value));
   }
 
   // ---- OCENY: tabela przedmiot × miesiąc
@@ -987,38 +1045,17 @@
       <ul class="list-plain" id="kids">${S.children.map(c => `<li><span class="dot" style="background:${c.color};width:14px;height:14px"></span><span style="flex:1">${esc(c.name)} <span class="muted">${esc(c.institution || '')}</span></span><button class="btn sm" data-edit="${c.id}">Edytuj</button></li>`).join('') || '<li class="muted">Brak dzieci — dodaj pierwsze.</li>'}</ul>
       <button class="btn" id="add-kid" style="margin-top:10px">+ Dodaj dziecko</button>
       <h3 style="margin:22px 0 8px">Kto pisze o kim</h3>
-      <p class="hint">4Parents nie zaznacza, którego dziecka dotyczy wpis — większość ogłoszeń idzie do całego przedszkola. Ustaw tu raz, kogo dotyczą wiadomości od danej osoby. Przy zmianie opiekunki wystarczy poprawić jedną pozycję.</p>
-      <ul class="list-plain rules" id="sender-rules">${senderRows()}</ul>
+      <p class="hint">Przypisanie nadawców z 4Parents do dzieci ma własną stronę.</p>
+      <button class="btn" id="open-senders">👥 Otwórz mapowanie nadawców</button>
       <h3 style="margin:22px 0 8px">Rodzina</h3>
       <ul class="list-plain">${S.members.map(m => `<li><span class="dot" style="background:${m.color};width:14px;height:14px"></span><span style="flex:1">${esc(m.display_name)}${m.user_id === S.me.user_id ? ' (ja)' : ''}</span></li>`).join('')}</ul>
       <p class="muted" style="font-size:.85rem">Zalogowano jako ${esc(S.user.email)}.</p>
       <button class="btn" id="logout">Wyloguj</button>
       <p class="muted" style="font-size:.75rem;margin-top:18px">Agent Dużej Rodziny · ${S.items.length} wiadomości, ${S.tasks.length} zadań, ${S.events.length} wydarzeń</p>`);
-    $$('#sender-rules select').forEach(sel => sel.onchange = () => saveSenderRule(sel.dataset.source, sel.dataset.sender, sel.value));
+    $('#open-senders').onclick = () => { closeModal(); setView('senders'); };
     $('#add-kid').onclick = () => openChildForm({});
     $$('#kids [data-edit]').forEach(b => b.onclick = () => openChildForm(child(b.dataset.edit)));
     $('#logout').onclick = () => sb.auth.signOut();
-  }
-
-  // lista nadawców z liczbą wiadomości i wyborem, kogo dotyczą
-  function senderRows() {
-    const cnt = new Map();
-    for (const i of S.items) {
-      if (!i.sender) continue;
-      const k = `${i.source}|${i.sender}`;
-      cnt.set(k, (cnt.get(k) || 0) + 1);
-    }
-    if (!cnt.size) return '<li class="muted">Brak nadawców — pojawią się po pobraniu wiadomości.</li>';
-    return [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => {
-      const cut = k.indexOf('|'); const source = k.slice(0, cut); const sender = k.slice(cut + 1);
-      const r = S.senderRules.get(k);
-      const val = r ? (r.scope === 'all' ? 'all' : (r.child_id || '')) : '';
-      const opts = [['', '— nie przypisuj —'], ['all', '🏫 całe przedszkole']]
-        .concat(S.children.map(c => [c.id, c.name]))
-        .map(([v, l]) => `<option value="${esc(v)}" ${val === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
-      return `<li><span style="flex:1">${esc(sender)} <span class="muted">${SOURCE_LABEL[source] || source} · ${n}</span></span>
-        <select data-source="${esc(source)}" data-sender="${esc(sender)}">${opts}</select></li>`;
-    }).join('');
   }
 
   async function saveSenderRule(source, sender, val) {

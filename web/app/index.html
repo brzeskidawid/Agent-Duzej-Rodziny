@@ -97,11 +97,21 @@
         <input id="items-search" class="search" type="search" placeholder="Szukaj w wiadomościach… np. zdjęcia" autocomplete="off">
         <span class="muted" id="items-summary" style="font-size:.85rem"></span>
         <button class="btn sm" id="mark-all-read" style="margin-left:auto">✓ Oznacz jako przeczytane</button>
+        <button class="btn sm" id="go-senders">👥 Mapowanie</button>
       </div>
       <div id="items-content"></div>
     </div>
 
     <!-- OCENY -->
+    <!-- MAPOWANIE NADAWCÓW -->
+    <div class="view hidden" data-view="senders">
+      <div class="toolbar">
+        <button class="btn ghost" id="senders-back">‹ Wiadomości</button>
+        <strong>Mapowanie nadawców</strong>
+      </div>
+      <div id="senders-content"></div>
+    </div>
+
     <div class="view hidden" data-view="grades">
       <div class="chips" id="grades-child"></div>
       <p class="muted" id="grades-summary" style="margin:0 0 10px;font-size:.85rem"></p>

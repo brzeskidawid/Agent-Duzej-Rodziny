@@ -261,6 +261,8 @@ form textarea{min-height:80px;resize:vertical}
 .tile.dimmed{opacity:.4}
 .chip.today{background:color-mix(in srgb,var(--ok),transparent 80%);color:var(--ok);font-weight:600}
 .chip.school{background:color-mix(in srgb,#64748b,transparent 82%);color:#64748b;font-weight:600}
-.rules{max-height:44vh;overflow:auto;margin-top:6px}
-.rules li{gap:8px}
-.rules select{max-width:46%;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-size:.85rem}
+.sum{font-size:.9rem;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0 4px}
+.card.sender .actions{align-items:center}
+.card.sender select{min-width:170px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-size:.88rem}
+.card.sender.todo{background:color-mix(in srgb,var(--warn),transparent 94%)}
+@media(max-width:640px){.card.sender{flex-wrap:wrap}.card.sender select{min-width:0;width:100%}}
