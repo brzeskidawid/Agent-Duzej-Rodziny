@@ -598,6 +598,21 @@
     return S.members.some(m => n.includes(norm(m.display_name))) || /brzesk/i.test(name);
   }
 
+  function schoolYearStart() {
+    const n = new Date();
+    return new Date(n.getMonth() >= 8 ? n.getFullYear() : n.getFullYear() - 1, 8, 1);
+  }
+
+  async function markInactiveBulk(senders) {
+    if (!senders.length) return;
+    const rows = senders.map(x => ({ source: '4parents', sender: x, scope: 'inactive', child_id: null, updated_by: S.me.user_id, updated_at: new Date().toISOString() }));
+    rows.forEach(r => S.senderRules.set(`4parents|${r.sender}`, r));
+    render();
+    const { error } = await sb.from('sender_rules').upsert(rows, { onConflict: 'source,sender' });
+    if (error) return fail(error);
+    toast(`Oznaczono ${senders.length} jako nieaktywnych`);
+  }
+
   function senderStats() {
     const by = new Map();
     for (const i of S.items) {
@@ -643,12 +658,23 @@
     const off = list.filter(r => scopeOf(r) === 'inactive');
     const h = `<p class="hint"><b>Reguły ogólne — jedna na osobę, nie na wiadomość.</b> 4Parents nie zaznacza, którego dziecka dotyczy wpis, więc ustalasz to raz dla nadawcy: wszystkie wiadomości od tej osoby, <b>dotychczasowe i przyszłe</b>, dostaną wybrane dziecko. Siostry piszące do całego przedszkola ustaw na „🏫 całe przedszkole". Gdy zmieni się opiekunka, poprawiasz jedną pozycję. Liczba wiadomości i podgląd służą tylko rozpoznaniu, kto to jest.</p>
       <div class="sum">Przypisane: <b>${done} z ${list.length - offCount}</b> aktywnych nadawców · obejmuje <b>${covered} z ${total}</b> wiadomości</div>`
-      + (todo.length ? `<div class="section-title">Do ustawienia (${todo.length})</div>` + todo.map(row).join('') : `<div class="empty">Wszyscy nadawcy ustawieni ✓</div>`)
+      + (todo.length ? (() => {
+          const cut = schoolYearStart();
+          const stare = todo.filter(r => !r.last || new Date(r.last) < cut);
+          const nowe = todo.filter(r => r.last && new Date(r.last) >= cut);
+          return (nowe.length ? `<div class="section-title">Bez przypisania — piszą w tym roku szkolnym (${nowe.length})</div>` + nowe.map(row).join('') : '')
+            + (stare.length ? `<div class="section-title">Bez przypisania — cisza od ${fmtDate(cut)} (${stare.length})</div>`
+                + `<p class="hint">Nic nie napisali w tym roku szkolnym, więc to najpewniej byli pracownicy. Możesz ich odhaczyć jednym kliknięciem — pojedyncze pozycje zawsze da się potem zmienić.</p>`
+                + `<button class="btn" id="bulk-off" style="margin-bottom:10px">🚫 Oznacz tych ${stare.length} jako nieaktywnych</button>`
+                + stare.map(row).join('') : '');
+        })() : `<div class="empty">Wszyscy nadawcy ustawieni ✓</div>`)
       + (ok.length ? `<div class="section-title">Ustawione (${ok.length})</div>` + ok.map(row).join('') : '')
       + (off.length ? `<div class="section-title">Nieaktywni pracownicy (${off.length})</div>` + off.map(row).join('') : '');
     const root = $('#senders-content');
     root.innerHTML = h;
     root.querySelectorAll('select').forEach(sel => sel.onchange = () => saveSenderRule('4parents', sel.dataset.sender, sel.value));
+    const bulk = $('#bulk-off');
+    if (bulk) bulk.onclick = () => { const cut = schoolYearStart(); markInactiveBulk(list.filter(r => !ruleOf(r.sender) && (!r.last || new Date(r.last) < cut)).map(r => r.sender)); };
   }
 
   // ---- OCENY: tabela przedmiot × miesiąc
