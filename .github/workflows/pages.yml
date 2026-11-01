@@ -23,6 +23,13 @@ jobs:
         with:
           enablement: true
       - run: echo "${GITHUB_SHA::7}" | tee web/app/version.txt web/version.txt
+      # Doklejamy wersję do adresów skryptu i stylów — przeglądarka nie może podać
+      # starego app.js do nowego index.html (to psuło nowe funkcje po wdrożeniu).
+      - run: |
+          V="${GITHUB_SHA::7}"
+          sed -i "s|href=\"styles.css\"|href=\"styles.css?v=$V\"|; s|src=\"app.js\"|src=\"app.js?v=$V\"|; s|src=\"config.js\"|src=\"config.js?v=$V\"|" web/app/index.html
+          sed -i "s|adr-app-v3|adr-app-$V|" web/app/sw.js
+          grep -n "app.js" web/app/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

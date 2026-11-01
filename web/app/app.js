@@ -419,6 +419,11 @@
   function doneToday(t) { return doneOn(t, new Date()); }
   // status pokazywany: dla zadania stałego liczy się odhaczenie DZISIAJ, nie globalny status
   function effStatus(t) { return isRepeating(t) ? (doneToday(t) ? 'done' : (t.status === 'doing' ? 'doing' : 'todo')) : t.status; }
+  function nextOccurrence(t) {
+    const d = new Date(); d.setHours(12, 0, 0, 0);
+    for (let n = 0; n < 400; n++) { if (activeOn(t, d)) return d; d.setDate(d.getDate() + 1); }
+    return null;
+  }
   function activeOn(t, d) {
     const k = dateKey(d);
     if (t.starts_at && dateKey(t.starts_at) > k) return false;
@@ -441,7 +446,7 @@
     if (f === 'child') board = board.filter(t => t.child_assignee);
     let h = '';
     for (const [st, label] of STATUS_COLS) {
-      let col = board.filter(t => effStatus(t) === st && (!isRepeating(t) || activeOn(t, new Date())));
+      let col = board.filter(t => effStatus(t) === st);
       col = st === 'done' ? col.sort((a, b) => new Date(b.done_at || 0) - new Date(a.done_at || 0)).slice(0, 30) : col.sort(byDue);
       h += `<div class="col" data-status="${st}"><div class="col-head"><span>${label}</span><span class="n">${col.length}</span></div>`
         + (col.length ? col.map(t => taskCard(t, true)).join('') : `<div class="col-empty">${st === 'done' ? 'Jeszcze nic' : 'Pusto'}</div>`)
@@ -671,8 +676,9 @@
     const rep = isRepeating(t);
     const over = !rep && st !== 'done' && due && due < todayStart;
     const doing = st === 'doing';
+    const nx = rep && !activeOn(t, new Date()) ? nextOccurrence(t) : null;
     const when = rep
-      ? `<span class="chip rep">🔁 ${REPEAT_LABEL[t.repeat] || 'stałe'}${due ? ` do ${fmtDate(due)}` : ''}</span>`
+      ? `<span class="chip rep">🔁 ${REPEAT_LABEL[t.repeat] || 'stałe'}${due ? ` do ${fmtDate(due)}` : ''}</span>${nx ? `<span class="chip">nie dziś · najbliżej ${fmtDate(nx)}</span>` : ''}${rep && !nx && !doneToday(t) ? '<span class="chip today">na dziś</span>' : ''}`
       : (due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}${t.starts_at && dateKey(t.starts_at) !== dateKey(due) ? ` (od ${fmtDate(t.starts_at)})` : ''}</span>` : '');
     const moves = board === 'backlog' ? `<div class="actions"><button class="btn sm" data-act="claim" data-who="${S.me.user_id}">👤 biorę</button>${partner() ? `<button class="btn sm" data-act="claim" data-who="${partner().user_id}">→ ${esc(partner().display_name)}</button>` : ''}<button class="btn sm" data-act="claim" data-who="child">→ Dziecko</button></div>` : board ? `<div class="actions">${st !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${st !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${st === 'done' ? '← ' : ''}w toku${st === 'todo' ? ' →' : ''}</button>` : ''}${st !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
     const nC = S.comments.filter(c => c.task_id === t.id).length; const nM = taskUnreadMentions(t.id);
@@ -683,7 +689,7 @@
         <div class="meta">${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${when}${t.item_id ? '<span>↗ z wiadomości</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
       </div>
-      ${board ? moves : `<div class="actions"><span class="status st-${st}">${st === 'done' ? (rep ? '✓ Dziś zrobione' : '✓ Zrobione') : doing ? '◐ W toku' : '○ Do zrobienia'}</span></div>`}</div>`;
+      ${board ? moves : `<div class="actions"><span class="status st-${st}">${st === 'done' ? (rep ? '✓ Dziś zrobione' : '✓ Zrobione') : nx ? '○ Nie dziś' : doing ? '◐ W toku' : '○ Do zrobienia'}</span></div>`}</div>`;
   }
 
   function eventCard(e) {

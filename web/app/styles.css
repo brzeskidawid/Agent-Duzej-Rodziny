@@ -259,3 +259,4 @@ form textarea{min-height:80px;resize:vertical}
 .search{flex:1;min-width:150px;max-width:320px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--fg);font-size:.88rem}
 .search:focus{outline:2px solid var(--accent);outline-offset:1px}
 .tile.dimmed{opacity:.4}
+.chip.today{background:color-mix(in srgb,var(--ok),transparent 80%);color:var(--ok);font-weight:600}
