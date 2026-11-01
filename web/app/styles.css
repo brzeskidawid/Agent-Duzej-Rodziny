@@ -256,3 +256,6 @@ form textarea{min-height:80px;resize:vertical}
 .hint{font-size:.8rem;color:var(--muted);line-height:1.45;margin:-2px 0 10px}
 .btn:disabled{opacity:.45;cursor:default}
 #mark-all-read{white-space:nowrap}
+.search{flex:1;min-width:150px;max-width:320px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--fg);font-size:.88rem}
+.search:focus{outline:2px solid var(--accent);outline-offset:1px}
+.tile.dimmed{opacity:.4}

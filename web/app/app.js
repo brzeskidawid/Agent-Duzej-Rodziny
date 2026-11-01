@@ -25,6 +25,7 @@
     view: 'today',
     taskFilter: 'all',
     itemsFilter: 'all',
+    itemsQuery: '',
     itemsChild: '',
     itemsKind: '',
     gradesChild: '',
@@ -235,6 +236,7 @@
     $('#task-filter').onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; S.taskFilter = b.dataset.f; render(); };
     $$('#items-filter button').forEach(b => b.onclick = () => { S.itemsFilter = b.dataset.f; render(); });
     $('#mark-all-read').onclick = markAllRead;
+    $('#items-search').oninput = e => { S.itemsQuery = e.target.value; render(); };
     $('#items-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.itemsChild = b.dataset.child; render(); };
     $$('#items-kind .tile').forEach(b => b.onclick = () => { S.itemsKind = S.itemsKind === b.dataset.k ? '' : b.dataset.k; render(); });
     $('#grades-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.gradesChild = b.dataset.child; render(); };
@@ -493,7 +495,21 @@
     return !k || c === k;
   }
 
+  // bez polskich znaków i wielkości liter — "zdjecie" znajdzie "Zdjęcia"
+  function norm(t) { return (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l'); }
+  function matchesQuery(i, q) {
+    const hay = norm(`${i.title} ${i.body || ''} ${i.sender || ''}`);
+    return q.split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+  }
+
   function itemsList() {
+    const q = norm(S.itemsQuery).trim();
+    // szukanie obejmuje WSZYSTKIE wiadomości, także archiwum — inaczej łatwo przeoczyć starszy wpis
+    if (q) {
+      let found = S.items.filter(i => i.kind !== 'grade' && !twinEventItem(i) && matchesQuery(i, q));
+      if (S.itemsChild) found = found.filter(i => i.child_id === S.itemsChild);
+      return found.sort((a, b) => new Date(b.occurred_at || b.published_at || 0) - new Date(a.occurred_at || a.published_at || 0));
+    }
     let list = S.items.filter(i => kindMatch(i, S.itemsKind) && !twinEventItem(i));
     if (S.itemsFilter === 'unread') list = list.filter(i => !S.reads.has(i.id));
     if (S.itemsChild) list = list.filter(i => i.child_id === S.itemsChild);
@@ -514,8 +530,13 @@
 
   function renderItems() {
     const list = itemsList();
+    const q = S.itemsQuery.trim();
+    $$('#items-kind .tile').forEach(t => t.classList.toggle('dimmed', !!q));
     let html;
-    if (S.itemsKind === 'archive') {
+    if (q) {
+      html = `<p class="hint">Szukam we wszystkich wiadomościach, też w archiwum. Znaleziono: ${list.length}.</p>`
+        + (list.length ? list.map(itemCard).join('') : `<div class="empty">Nic nie pasuje do „${esc(q)}".</div>`);
+    } else if (S.itemsKind === 'archive') {
       const arch = [...list].sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
       html = arch.length ? groupByDay(arch.map(i => ({ when: new Date(i.occurred_at), html: itemCard(i) }))) : `<div class="empty">Archiwum puste.</div>`;
     } else if (S.itemsKind === 'test') {
@@ -533,6 +554,7 @@
     const nw = list.filter(i => !S.reads.has(i.id)).length;
     const mb = $('#mark-all-read'); mb.textContent = `✓ Oznacz jako przeczytane${nw ? ` (${nw})` : ''}`; mb.disabled = !nw;
     $('#items-summary').textContent = list.length ? `${list.length} wiadomości${nw ? ` · ${nw} nowych` : ''}` : '';
+    const sq = $('#items-search'); if (document.activeElement !== sq && sq.value !== S.itemsQuery) sq.value = S.itemsQuery;
     wireCards($('#items-content'));
   }
 
