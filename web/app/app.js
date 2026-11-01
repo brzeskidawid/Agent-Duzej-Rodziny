@@ -189,7 +189,7 @@
   // -------------------------------------------------------------- data
   async function loadAll() {
     const since = new Date(); since.setDate(since.getDate() - 60);
-    const [ch, ta, ev, it, rd, ms, tc, cr] = await Promise.all([
+    const [ch, ta, ev, it, rd, ms, tc, cr, cp] = await Promise.all([
       sb.from('children').select('*').order('sort_order').order('name'),
       sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'),
       sb.from('events').select('*').order('starts_at'),
@@ -198,11 +198,13 @@
       sb.from('messages').select('*').order('created_at', { ascending: false }).limit(200),
       sb.from('task_comments').select('*').order('created_at'),
       sb.from('comment_reads').select('comment_id').eq('user_id', S.me.user_id),
+      sb.from('task_completions').select('task_id,day'),
     ]);
     for (const r of [ch, ta, ev, it, rd, ms]) if (r.error) return fail(r.error);
     S.children = ch.data; S.tasks = ta.data; S.events = ev.data; S.items = it.data;
     S.reads = new Set(rd.data.map(r => r.item_id)); S.messages = ms.data.reverse();
     S.comments = tc.error ? [] : tc.data; S.commentReads = new Set(cr.error ? [] : cr.data.map(r => r.comment_id));
+    S.completions = new Set(cp.error ? [] : cp.data.map(r => `${r.task_id}|${r.day}`));
   }
 
   function subscribeRealtime() {
@@ -211,6 +213,7 @@
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async () => { const { data } = await sb.from('tasks').select('*').order('due_at', { ascending: true, nullsFirst: false }).order('created_at'); if (data) { S.tasks = data; render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async () => { const { data } = await sb.from('events').select('*').order('starts_at'); if (data) { S.events = data; render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, async () => { const { data } = await sb.from('task_comments').select('*').order('created_at'); if (data) { S.comments = data; if (S.openId) refreshComments(S.openId); render(); } })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_completions' }, async () => { const { data } = await sb.from('task_completions').select('task_id,day'); if (data) { S.completions = new Set(data.map(r => `${r.task_id}|${r.day}`)); render(); } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, async () => { const { data } = await sb.from('items').select('*').order('published_at', { ascending: false }).limit(300); if (data) { S.items = data; render(); } })
       .subscribe();
   }
@@ -231,6 +234,7 @@
 
     $('#task-filter').onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; S.taskFilter = b.dataset.f; render(); };
     $$('#items-filter button').forEach(b => b.onclick = () => { S.itemsFilter = b.dataset.f; render(); });
+    $('#mark-all-read').onclick = markAllRead;
     $('#items-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.itemsChild = b.dataset.child; render(); };
     $$('#items-kind .tile').forEach(b => b.onclick = () => { S.itemsKind = S.itemsKind === b.dataset.k ? '' : b.dataset.k; render(); });
     $('#grades-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.gradesChild = b.dataset.child; render(); };
@@ -316,9 +320,10 @@
   function renderToday() {
     const now = new Date(); const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
     const in7 = addDays(todayStart, 7);
-    const myTasks = S.tasks.filter(t => t.status !== 'done' && (t.assignee === S.me.user_id || !isAssigned(t)));
+    const standing = S.tasks.filter(t => isRepeating(t) && activeOn(t, now) && (t.assignee === S.me.user_id || t.child_assignee || !isAssigned(t)));
+    const myTasks = S.tasks.filter(t => !isRepeating(t) && t.status !== 'done' && (t.assignee === S.me.user_id || !isAssigned(t)));
     const overdue = myTasks.filter(t => t.due_at && new Date(t.due_at) < todayStart);
-    const weekTasks = S.tasks.filter(t => t.due_at && new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7);
+    const weekTasks = S.tasks.filter(t => !isRepeating(t) && t.due_at && new Date(t.due_at) >= todayStart && new Date(t.due_at) < in7);
     const events = S.events.filter(e => new Date(e.starts_at) >= todayStart && new Date(e.starts_at) < in7 && !taskForEvent(e));
     const noDateMine = myTasks.filter(t => !t.due_at);
     const unread = S.items.filter(i => !S.reads.has(i.id) && i.kind !== 'grade' && !isArchived(i) && !twinEventItem(i)).slice(0, 8);
@@ -329,6 +334,8 @@
 
     const um = unreadMentions();
     if (um.length) h += `<div class="section-title">Wzmianki dla Ciebie</div>` + um.map(c => { const t = S.tasks.find(x => x.id === c.task_id); return t ? `<div class="card clickable" style="border-left-color:#0ea5e9" data-task="${t.id}"><div class="grow" data-act="edit-task"><div class="title">💬 ${esc(member(c.author)?.display_name || '')}: ${fmtComment(c.body)}</div><div class="meta"><span>w zadaniu: ${esc(t.title)}</span><span>${fmtDateTime(c.created_at)}</span></div></div></div>` : ''; }).join('');
+    if (standing.length) { const left = standing.filter(t => !doneToday(t)).length;
+      h += `<div class="section-title">Na dziś, stałe${left ? ` · zostało ${left}` : ' · wszystko odhaczone ✓'}</div>` + standing.map(t => taskCard(t)).join(''); }
     if (overdue.length) { h += `<div class="section-title">Po terminie</div>` + overdue.map(taskCard).join(''); }
     h += `<div class="section-title">Najbliższe 7 dni</div>`;
     const merged = [
@@ -402,6 +409,24 @@
     wireCards(dd);
   }
 
+  // ---- ZADANIA STAŁE (powtarzalne)
+  const REPEATS = [['', 'Jednorazowe'], ['daily', 'Codziennie'], ['weekdays', 'W dni powszednie (pn–pt)'], ['weekly', 'Co tydzień']];
+  const REPEAT_LABEL = { daily: 'codziennie', weekdays: 'pn–pt', weekly: 'co tydzień' };
+  function isRepeating(t) { return !!t.repeat; }
+  function doneOn(t, d) { return S.completions.has(`${t.id}|${dateKey(d)}`); }
+  function doneToday(t) { return doneOn(t, new Date()); }
+  // status pokazywany: dla zadania stałego liczy się odhaczenie DZISIAJ, nie globalny status
+  function effStatus(t) { return isRepeating(t) ? (doneToday(t) ? 'done' : (t.status === 'doing' ? 'doing' : 'todo')) : t.status; }
+  function activeOn(t, d) {
+    const k = dateKey(d);
+    if (t.starts_at && dateKey(t.starts_at) > k) return false;
+    if (t.due_at && dateKey(t.due_at) < k) return false;
+    const wd = new Date(d).getDay();
+    if (t.repeat === 'weekdays') return wd >= 1 && wd <= 5;
+    if (t.repeat === 'weekly') return t.starts_at ? new Date(t.starts_at).getDay() === wd : true;
+    return true;
+  }
+
   // ---- ZADANIA: kanban
   const STATUS_COLS = [['todo', 'Do zrobienia'], ['doing', 'W toku'], ['done', 'Zrobione']];
   function renderTasks() {
@@ -414,7 +439,7 @@
     if (f === 'child') board = board.filter(t => t.child_assignee);
     let h = '';
     for (const [st, label] of STATUS_COLS) {
-      let col = board.filter(t => t.status === st);
+      let col = board.filter(t => effStatus(t) === st && (!isRepeating(t) || activeOn(t, new Date())));
       col = st === 'done' ? col.sort((a, b) => new Date(b.done_at || 0) - new Date(a.done_at || 0)).slice(0, 30) : col.sort(byDue);
       h += `<div class="col" data-status="${st}"><div class="col-head"><span>${label}</span><span class="n">${col.length}</span></div>`
         + (col.length ? col.map(t => taskCard(t, true)).join('') : `<div class="col-empty">${st === 'done' ? 'Jeszcze nic' : 'Pusto'}</div>`)
@@ -426,7 +451,7 @@
     wireCards(root);
     wireDragDrop(root);
 
-    const backlog = S.tasks.filter(t => !isAssigned(t) && t.status !== 'done').sort(byDue);
+    const backlog = S.tasks.filter(t => !isAssigned(t) && effStatus(t) !== 'done').sort(byDue);
     const bl = $('#tasks-backlog');
     bl.innerHTML = `<div class="backlog-head"><span>Nieprzypisane zadania</span><span class="n">${backlog.length}</span></div>`
       + (backlog.length ? `<div class="backlog-grid">${backlog.map(t => taskCard(t, 'backlog')).join('')}</div>` : `<div class="col-empty">Pusto. Trafiają tu zadania bez osoby — także te tworzone automatycznie z wiadomości z terminem.</div>`)
@@ -442,7 +467,7 @@
     root.querySelectorAll('.col').forEach(col => {
       col.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; col.classList.add('drop'); });
       col.addEventListener('dragleave', () => col.classList.remove('drop'));
-      col.addEventListener('drop', e => { e.preventDefault(); col.classList.remove('drop'); const id = e.dataTransfer.getData('text/plain'); const t = S.tasks.find(x => x.id === id); if (t && t.status !== col.dataset.status) setTaskStatus(id, col.dataset.status); });
+      col.addEventListener('drop', e => { e.preventDefault(); col.classList.remove('drop'); const id = e.dataTransfer.getData('text/plain'); const t = S.tasks.find(x => x.id === id); if (t && effStatus(t) !== col.dataset.status) setTaskStatus(id, col.dataset.status); });
     });
   }
 
@@ -468,14 +493,31 @@
     return !k || c === k;
   }
 
-  function renderItems() {
+  function itemsList() {
     let list = S.items.filter(i => kindMatch(i, S.itemsKind) && !twinEventItem(i));
     if (S.itemsFilter === 'unread') list = list.filter(i => !S.reads.has(i.id));
     if (S.itemsChild) list = list.filter(i => i.child_id === S.itemsChild);
+    return list;
+  }
+
+  async function markAllRead() {
+    const unread = itemsList().filter(i => !S.reads.has(i.id));
+    if (!unread.length) return toast('Nie ma czego oznaczać ✓');
+    unread.forEach(i => S.reads.add(i.id)); render();
+    const rows = unread.map(i => ({ item_id: i.id, user_id: S.me.user_id }));
+    for (let n = 0; n < rows.length; n += 200) {
+      const { error } = await sb.from('item_reads').upsert(rows.slice(n, n + 200), { onConflict: 'item_id,user_id' });
+      if (error) return fail(error);
+    }
+    toast(`Oznaczono ${unread.length} ${unread.length === 1 ? 'wiadomość' : 'wiadomości'} jako przeczytane`);
+  }
+
+  function renderItems() {
+    const list = itemsList();
     let html;
     if (S.itemsKind === 'archive') {
-      list = list.sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
-      html = list.length ? groupByDay(list.map(i => ({ when: new Date(i.occurred_at), html: itemCard(i) }))) : `<div class="empty">Archiwum puste.</div>`;
+      const arch = [...list].sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
+      html = arch.length ? groupByDay(arch.map(i => ({ when: new Date(i.occurred_at), html: itemCard(i) }))) : `<div class="empty">Archiwum puste.</div>`;
     } else if (S.itemsKind === 'test') {
       // sprawdziany: nadchodzące od najbliższego, potem minione
       const now = Date.now();
@@ -489,6 +531,7 @@
     }
     $('#items-content').innerHTML = html;
     const nw = list.filter(i => !S.reads.has(i.id)).length;
+    const mb = $('#mark-all-read'); mb.textContent = `✓ Oznacz jako przeczytane${nw ? ` (${nw})` : ''}`; mb.disabled = !nw;
     $('#items-summary').textContent = list.length ? `${list.length} wiadomości${nw ? ` · ${nw} nowych` : ''}` : '';
     wireCards($('#items-content'));
   }
@@ -602,18 +645,23 @@
     const c = child(t.child_id); const col = c ? c.color : 'var(--line)';
     const due = t.due_at ? new Date(t.due_at) : null;
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const over = t.status !== 'done' && due && due < todayStart;
-    const doing = t.status === 'doing';
-    const moves = board === 'backlog' ? `<div class="actions"><button class="btn sm" data-act="claim" data-who="${S.me.user_id}">👤 biorę</button>${partner() ? `<button class="btn sm" data-act="claim" data-who="${partner().user_id}">→ ${esc(partner().display_name)}</button>` : ''}<button class="btn sm" data-act="claim" data-who="child">→ Dziecko</button></div>` : board ? `<div class="actions">${t.status !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${t.status !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${t.status === 'done' ? '← ' : ''}w toku${t.status === 'todo' ? ' →' : ''}</button>` : ''}${t.status !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
+    const st = effStatus(t);
+    const rep = isRepeating(t);
+    const over = !rep && st !== 'done' && due && due < todayStart;
+    const doing = st === 'doing';
+    const when = rep
+      ? `<span class="chip rep">🔁 ${REPEAT_LABEL[t.repeat] || 'stałe'}${due ? ` do ${fmtDate(due)}` : ''}</span>`
+      : (due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}${t.starts_at && dateKey(t.starts_at) !== dateKey(due) ? ` (od ${fmtDate(t.starts_at)})` : ''}</span>` : '');
+    const moves = board === 'backlog' ? `<div class="actions"><button class="btn sm" data-act="claim" data-who="${S.me.user_id}">👤 biorę</button>${partner() ? `<button class="btn sm" data-act="claim" data-who="${partner().user_id}">→ ${esc(partner().display_name)}</button>` : ''}<button class="btn sm" data-act="claim" data-who="child">→ Dziecko</button></div>` : board ? `<div class="actions">${st !== 'todo' ? `<button class="btn sm" data-act="move" data-to="todo">← do zrobienia</button>` : ''}${st !== 'doing' ? `<button class="btn sm" data-act="move" data-to="doing">${st === 'done' ? '← ' : ''}w toku${st === 'todo' ? ' →' : ''}</button>` : ''}${st !== 'done' ? `<button class="btn sm" data-act="move" data-to="done">zrobione →</button>` : ''}</div>` : '';
     const nC = S.comments.filter(c => c.task_id === t.id).length; const nM = taskUnreadMentions(t.id);
-    return `<div class="card ${t.status === 'done' && board ? 'done' : ''} ${S.openId === t.id ? 'sel' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
-      <button class="check ${t.status === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="Oznacz jako zrobione">${t.status === 'done' ? '✓' : ''}</button>
+    return `<div class="card ${st === 'done' && board ? 'done' : ''} ${S.openId === t.id ? 'sel' : ''}" style="border-left-color:${col}" data-task="${t.id}" ${board ? 'draggable="true"' : ''}>
+      <button class="check ${st === 'done' ? 'on' : ''} ${doing ? 'doing' : ''}" data-act="toggle" title="${rep ? 'Odhacz na dziś' : 'Oznacz jako zrobione'}">${st === 'done' ? '✓' : ''}</button>
       <div class="grow clickable" data-act="edit-task">
         <div class="title">${esc(t.title)}</div>
-        <div class="meta">${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${due ? `<span class="${over ? 'overdue' : ''}">⏰ ${fmtDate(due)}</span>` : ''}${t.item_id ? '<span>↗ z wiadomości</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
+        <div class="meta">${childChip(t.child_id)}${memberChip(t.assignee, t.child_assignee)}${when}${t.item_id ? '<span>↗ z wiadomości</span>' : ''}${nM ? '<span class="chip mention">@ dla Ciebie</span>' : (nC ? `<span>💬 ${nC}</span>` : '')}</div>
         ${t.notes ? `<div class="body">${esc(t.notes)}</div>` : ''}
       </div>
-      ${board ? moves : `<div class="actions"><span class="status st-${t.status}">${t.status === 'done' ? '✓ Zrobione' : doing ? '◐ W toku' : '○ Do zrobienia'}</span></div>`}</div>`;
+      ${board ? moves : `<div class="actions"><span class="status st-${st}">${st === 'done' ? (rep ? '✓ Dziś zrobione' : '✓ Zrobione') : doing ? '◐ W toku' : '○ Do zrobienia'}</span></div>`}</div>`;
   }
 
   function eventCard(e) {
@@ -683,6 +731,23 @@
 
   async function setTaskStatus(id, status) {
     const t = S.tasks.find(x => x.id === id);
+    if (isRepeating(t)) {
+      // zadanie stałe: "zrobione" dotyczy tylko dzisiejszego dnia — jutro wraca na listę
+      const day = dateKey(new Date()); const key = `${id}|${day}`;
+      const wasDone = S.completions.has(key);
+      if (status === 'done') S.completions.add(key); else S.completions.delete(key);
+      if (status !== 'done' && t.status !== status) t.status = status === 'doing' ? 'doing' : 'todo';
+      render();
+      if (status === 'done' && !wasDone) {
+        const { error } = await sb.from('task_completions').upsert({ task_id: id, day, user_id: S.me.user_id }, { onConflict: 'task_id,day' });
+        if (error) fail(error);
+      } else if (status !== 'done' && wasDone) {
+        const { error } = await sb.from('task_completions').delete().eq('task_id', id).eq('day', day);
+        if (error) fail(error);
+      }
+      if (status !== 'done') await sb.from('tasks').update({ status: t.status, done_at: null }).eq('id', id);
+      return;
+    }
     t.status = status; t.done_at = status === 'done' ? new Date().toISOString() : null; render();
     const { error } = await sb.from('tasks').update({ status: t.status, done_at: t.done_at }).eq('id', id);
     if (error) fail(error);
@@ -753,9 +818,14 @@
           <label>Kto robi<select name="assignee">${memberOptions(t.child_assignee ? 'child' : ('assignee' in t && t.assignee !== undefined ? t.assignee : (isNew ? S.me.user_id : null)))}</select></label>
         </div>
         <div class="row">
-          <label>Termin<input type="date" name="due" value="${t.due_at ? dateKey(t.due_at) : ''}"></label>
+          <label>Od<input type="date" name="start" value="${t.starts_at ? dateKey(t.starts_at) : ''}"></label>
+          <label>Termin / do<input type="date" name="due" value="${t.due_at ? dateKey(t.due_at) : ''}"></label>
+        </div>
+        <div class="row">
+          <label>Powtarzanie<select name="repeat">${REPEATS.map(([v, l]) => `<option value="${v}" ${(t.repeat || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label>Status<select name="status">${[['todo', 'Do zrobienia'], ['doing', 'W toku'], ['done', 'Zrobione']].map(([v, l]) => `<option value="${v}" ${(t.status || 'todo') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         </div>
+        <p class="hint">Zadanie stałe (np. 10 min logopedii dziennie): wybierz powtarzanie i zostaw <b>Termin / do</b> puste, żeby trwało bez końca. Odhaczasz je osobno każdego dnia.</p>
         <label>Notatki<textarea name="notes">${esc(t.notes || '')}</textarea></label>
         <button class="btn primary" type="submit">${isNew ? 'Dodaj' : 'Zapisz'}</button>
         ${isNew ? '' : '<button class="btn danger" type="button" id="f-del" style="width:100%;margin-top:8px">Usuń zadanie</button>'}
@@ -778,7 +848,9 @@
       e.preventDefault(); const f = new FormData(e.target);
       const status = f.get('status') || 'todo';
       const who = f.get('assignee');
-      const rec = { title: f.get('title').trim(), child_id: f.get('child_id') || null, assignee: who && who !== 'child' ? who : null, child_assignee: who === 'child', due_at: f.get('due') ? new Date(f.get('due') + 'T12:00:00').toISOString() : null, notes: f.get('notes').trim() || null, status, done_at: status === 'done' ? (t.done_at || new Date().toISOString()) : null };
+      const repeat = f.get('repeat') || null;
+      const st = repeat && status === 'done' ? 'todo' : status;   // stałe odhacza się per dzień
+      const rec = { title: f.get('title').trim(), child_id: f.get('child_id') || null, assignee: who && who !== 'child' ? who : null, child_assignee: who === 'child', starts_at: f.get('start') ? new Date(f.get('start') + 'T12:00:00').toISOString() : null, due_at: f.get('due') ? new Date(f.get('due') + 'T12:00:00').toISOString() : null, repeat, notes: f.get('notes').trim() || null, status: st, done_at: st === 'done' ? (t.done_at || new Date().toISOString()) : null };
       let q;
       if (isNew) q = sb.from('tasks').insert({ ...rec, item_id: t.item_id || null, created_by: S.me.user_id }).select().single();
       else q = sb.from('tasks').update(rec).eq('id', t.id).select().single();
