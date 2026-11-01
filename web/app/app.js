@@ -383,8 +383,8 @@
     const okChild = cid => !S.calChild || cid === S.calChild;
     const okKind = k => !S.calKind || k === S.calKind;
     for (const e of S.events) { const k = calKindOf(e.title, ''); if (okChild(e.child_id) && okKind(k)) push(dateKey(e.starts_at), { kind: 'event', ck: k, when: new Date(e.starts_at), e }); }
-    // Zadania przedszkolne pokazujemy TYLKO po wybraniu ich kategorii — inaczej zalałyby kalendarz.
-    if (S.calKind === 'kinder') {
+    // Zadania przedszkolne są w widoku "Wszystko" na równi z resztą; kafelek je wyodrębnia.
+    if (!S.calKind || S.calKind === 'kinder') {
       for (const i of S.items) if (isKinderTask(i) && okChildItem(i, S.calChild)) push(dateKey(i.occurred_at), { kind: 'item', ck: 'kinder', when: new Date(i.occurred_at), i });
     }
     for (const i of S.items) if (i.kind === 'message' && i.occurred_at && TEST_RE.test(i.title) && okChild(i.child_id) && okKind('test')) {
@@ -407,7 +407,7 @@
         return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${ico}${esc(label)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
     }
-    h += '</div><div class="cal-legend"><span><span class="pi">!</span>sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>🚗 wycieczka / wyjście</span><span>📣 inne</span><span>🧸 zadania przedszkolne (osobny kafelek)</span><span>kolor = dziecko</span></div>';
+    h += '</div><div class="cal-legend"><span><span class="pi">!</span>sprawdzian / kartkówka / dyktando</span><span>📚 zadanie domowe</span><span>🚗 wycieczka / wyjście</span><span>📣 inne</span><span>🧸 zadania przedszkolne</span><span>kolor = dziecko</span></div>';
     $('#calendar-content').innerHTML = h;
     $('#calendar-content').onclick = e => { const d = e.target.closest('[data-day]'); if (!d) return; S.calSel = d.dataset.day; render(); };
     $('#cal-child').onclick = e => { const b = e.target.closest('[data-child]'); if (!b) return; S.calChild = b.dataset.child; render(); };
