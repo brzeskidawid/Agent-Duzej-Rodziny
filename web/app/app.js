@@ -401,7 +401,7 @@
         const obj = x.kind === 'item' ? x.i : x.e; const c = child(x.kind === 'item' ? effChild(obj) : obj.child_id); const isTest = x.ck === 'test';
         const trip = /wycieczk|wyjazd|wyjści|kino|teatr|muzeum/i.test(obj.title);
         const ico = isTest ? '<span class="pi">!</span>' : x.ck === 'kinder' ? '🧸 ' : x.ck === 'homework' ? '📚 ' : trip ? '🚗 ' : '📣 ';
-        const label = obj.title.replace(/^[^:·]*·\s*/, '');
+        const label = x.ck === 'kinder' ? kinderLabel(obj) : obj.title.replace(/^[^:·]*·\s*/, '');
         return `<div class="pill ${isTest ? 'test' : ''}" style="background:${c ? c.color : '#64748b'}" title="${esc(obj.title)}">${ico}${esc(label)}</div>`;
       }).join('') + (list.length > max ? `<div class="more">+${list.length - max}</div>` : '') + '</div>';
     }
@@ -495,6 +495,13 @@
   function wholeSchool(i) { const r = senderRule(i); return !i.child_id && !!r && r.scope === 'all'; }
   function okChildItem(i, cid) { if (!cid) return true; const e = effChild(i); return e ? e === cid : wholeSchool(i); }
   function isKinderTask(i) { return i.source === '4parents' && !!i.occurred_at && KINDER_TASK_RE.test(`${i.title} ${i.body || ''}`); }
+  // Tytuł wpisu z przedszkola to zwykle "Drodzy Rodzice!" — na pigułce w kalendarzu
+  // pokazujemy zdanie, w którym faktycznie jest prośba.
+  function kinderLabel(i) {
+    const zd = `${i.title}. ${i.body || ''}`.split(/(?<=[.!?])\s+|\n+/).map(x => x.trim()).filter(Boolean);
+    const hit = zd.find(x => KINDER_TASK_RE.test(x)) || i.title;
+    return hit.length > 48 ? hit.slice(0, 47).replace(/\s+\S*$/, '') + '…' : hit;
+  }
 
   // ---- WPISY
   function isArchived(i) {
