@@ -269,3 +269,5 @@ form textarea{min-height:80px;resize:vertical}
 .sel-wrap{flex-direction:column;align-items:flex-end;gap:4px}
 .sel-label{font-size:.72rem;color:var(--muted);text-align:right}
 @media(max-width:640px){.sel-wrap{align-items:stretch;width:100%}.sel-label{text-align:left}}
+.card.sender.off{opacity:.55}
+.card.sender.off .title{text-decoration:line-through}

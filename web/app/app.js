@@ -614,19 +614,21 @@
   function renderSenders() {
     const list = senderStats();
     const ruleOf = s0 => S.senderRules.get(`4parents|${s0}`);
-    const done = list.filter(r => ruleOf(r.sender)).length;
-    const covered = list.filter(r => ruleOf(r.sender)).reduce((a, r) => a + r.n, 0);
+    const offCount = list.filter(r => { const x = ruleOf(r.sender); return x && x.scope === 'inactive'; }).length;
+    const done = list.filter(r => { const x = ruleOf(r.sender); return x && x.scope !== 'inactive'; }).length;
+    const covered = list.filter(r => { const x = ruleOf(r.sender); return x && x.scope !== 'inactive'; }).reduce((a, r) => a + r.n, 0);
     const total = list.reduce((a, r) => a + r.n, 0);
 
     const row = r => {
       const rl = ruleOf(r.sender);
-      const val = rl ? (rl.scope === 'all' ? 'all' : (rl.child_id || '')) : '';
+      const val = rl ? (rl.scope === 'child' ? (rl.child_id || '') : rl.scope) : '';
       const c = rl && rl.scope === 'child' ? child(rl.child_id) : null;
       const opts = [['', '— nie przypisano —'], ['all', '🏫 całe przedszkole']]
         .concat(S.children.filter(k => k.institution !== 'szkoła').map(k => [k.id, k.name]))
         .concat(S.children.filter(k => k.institution === 'szkoła').map(k => [k.id, k.name + ' (szkoła)']))
+        .concat([['inactive', '🚫 nieaktywny pracownik']])
         .map(([v, l]) => `<option value="${esc(v)}" ${val === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
-      return `<div class="card sender ${val ? '' : 'todo'}" style="border-left-color:${c ? c.color : (val === 'all' ? '#64748b' : 'var(--warn)')}">
+      return `<div class="card sender ${val ? '' : 'todo'} ${val === 'inactive' ? 'off' : ''}" style="border-left-color:${c ? c.color : val === 'all' ? '#64748b' : val === 'inactive' ? 'var(--line)' : 'var(--warn)'}">
         <div class="grow">
           <div class="title">${esc(r.sender)}</div>
           <div class="meta"><span>${r.n} ${r.n === 1 ? 'wiadomość' : 'wiadomości'} w aplikacji</span>${r.last ? `<span>ostatnia ${fmtDate(r.last)}</span>` : ''}</div>
@@ -635,12 +637,15 @@
         <div class="actions sel-wrap"><span class="sel-label">wszystkie jej wiadomości dotyczą</span><select data-sender="${esc(r.sender)}">${opts}</select></div></div>`;
     };
 
-    const todo = list.filter(r => !ruleOf(r.sender));
-    const ok = list.filter(r => ruleOf(r.sender));
+    const scopeOf = r => { const x = ruleOf(r.sender); return x ? x.scope : null; };
+    const todo = list.filter(r => !scopeOf(r));
+    const ok = list.filter(r => ['child', 'all'].includes(scopeOf(r)));
+    const off = list.filter(r => scopeOf(r) === 'inactive');
     const h = `<p class="hint"><b>Reguły ogólne — jedna na osobę, nie na wiadomość.</b> 4Parents nie zaznacza, którego dziecka dotyczy wpis, więc ustalasz to raz dla nadawcy: wszystkie wiadomości od tej osoby, <b>dotychczasowe i przyszłe</b>, dostaną wybrane dziecko. Siostry piszące do całego przedszkola ustaw na „🏫 całe przedszkole". Gdy zmieni się opiekunka, poprawiasz jedną pozycję. Liczba wiadomości i podgląd służą tylko rozpoznaniu, kto to jest.</p>
-      <div class="sum">Przypisane: <b>${done} z ${list.length}</b> nadawców · obejmuje <b>${covered} z ${total}</b> wiadomości</div>`
-      + (todo.length ? `<div class="section-title">Do ustawienia (${todo.length})</div>` + todo.map(row).join('') : `<div class="empty">Wszyscy nadawcy przypisani ✓</div>`)
-      + (ok.length ? `<div class="section-title">Ustawione (${ok.length})</div>` + ok.map(row).join('') : '');
+      <div class="sum">Przypisane: <b>${done} z ${list.length - offCount}</b> aktywnych nadawców · obejmuje <b>${covered} z ${total}</b> wiadomości</div>`
+      + (todo.length ? `<div class="section-title">Do ustawienia (${todo.length})</div>` + todo.map(row).join('') : `<div class="empty">Wszyscy nadawcy ustawieni ✓</div>`)
+      + (ok.length ? `<div class="section-title">Ustawione (${ok.length})</div>` + ok.map(row).join('') : '')
+      + (off.length ? `<div class="section-title">Nieaktywni pracownicy (${off.length})</div>` + off.map(row).join('') : '');
     const root = $('#senders-content');
     root.innerHTML = h;
     root.querySelectorAll('select').forEach(sel => sel.onchange = () => saveSenderRule('4parents', sel.dataset.sender, sel.value));
@@ -1065,11 +1070,12 @@
       const { error } = await sb.from('sender_rules').delete().eq('source', source).eq('sender', sender);
       return error && fail(error);
     }
-    const row = { source, sender, scope: val === 'all' ? 'all' : 'child', child_id: val === 'all' ? null : val, updated_by: S.me.user_id, updated_at: new Date().toISOString() };
+    const scope = val === 'all' || val === 'inactive' ? val : 'child';
+    const row = { source, sender, scope, child_id: scope === 'child' ? val : null, updated_by: S.me.user_id, updated_at: new Date().toISOString() };
     S.senderRules.set(key, row); render();
     const { error } = await sb.from('sender_rules').upsert(row, { onConflict: 'source,sender' });
     if (error) return fail(error);
-    toast('Zapisano regułę');
+    toast(scope === 'inactive' ? 'Oznaczono jako nieaktywnego' : 'Zapisano regułę');
   }
 
   function openChildForm(c) {
