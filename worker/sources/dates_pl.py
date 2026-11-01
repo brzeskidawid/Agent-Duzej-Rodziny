@@ -24,8 +24,8 @@ _WEEKDAYS = {
 }
 _RE_WORD = re.compile(r"\b(\d{1,2})\s*(?:\.\s*)?(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")\b(?:\s*(\d{4}))?", re.I)
 _RE_NUM = re.compile(r"\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b")
-_RE_WD = re.compile(r"\b(?:w|we)\s+(?:(?:przysz[łl][yaą]|najbli[żz]sz[yaą])\s+)?(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I)
-_RE_REL = re.compile(r"\b(pojutrze|jutro)\b", re.I)
+_RE_WD = re.compile(r"\b(?:w|we)\s+(?:(?:przysz[łl][yaą]|najbli[żz]sz[yaą]|nadchodz[ąa]c[yaą]|ten|t[ęea])\s+)?(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I)
+_RE_REL = re.compile(r"\b(pojutrze|jutro|dzisiaj|dzi[śs])\b", re.I)
 
 
 def _mk(day: int, month: int, year: int | None, ref: datetime) -> datetime | None:
@@ -71,5 +71,7 @@ def extract_date(text: str | None, ref: datetime | None) -> datetime | None:
         return (ref_naive + timedelta(days=delta)).replace(hour=12, minute=0, second=0, microsecond=0).astimezone()
     m = _RE_REL.search(text)
     if m:
-        return (ref_naive + timedelta(days=2 if m.group(1).lower() == "pojutrze" else 1)).replace(hour=12, minute=0, second=0, microsecond=0).astimezone()
+        _sl = m.group(1).lower()
+        _d = 2 if _sl == "pojutrze" else 0 if _sl.startswith("dzi") else 1
+        return (ref_naive + timedelta(days=_d)).replace(hour=12, minute=0, second=0, microsecond=0).astimezone()
     return None

@@ -184,7 +184,9 @@ class FourParentsSource(Source):
                     sent = _dt(msg.get("sentAt"))
                     sender = names.get(msg.get("senderId")) or "Przedszkole"
                     title = body.split("\n", 1)[0][:140] or "Wiadomość"
-                    occurred = extract_date(body, sent) if BRING_RE.search(body) else None
+                    # Termin z treści ("w czwartek", "5 listopada"); bez niego liczy się data wysłania,
+                    # dzięki czemu stare wpisy same wpadają do Archiwum.
+                    occurred = extract_date(body, sent) or sent
                     items.append(Item(
                         source="4parents", external_id=f"msg-{msg.get('id')}", kind="message",
                         title=title, body=body, sender=sender,
@@ -201,7 +203,7 @@ class FourParentsSource(Source):
                 body = _text(post.get("content"))
                 published = _dt(post.get("publishedAt"))
                 ev_at = _date_time(post.get("eventDate"), post.get("eventStartTime"))
-                occurred = ev_at or (extract_date(f"{post.get('title','')}\n{body or ''}", published) if BRING_RE.search(f"{post.get('title','')} {body or ''}") else None)
+                occurred = ev_at or extract_date(f"{post.get('title','')}\n{body or ''}", published) or published
                 items.append(Item(
                     source="4parents", external_id=f"post-{post.get('id')}",
                     kind="event" if ev_at else "announcement",
