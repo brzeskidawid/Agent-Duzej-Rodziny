@@ -160,11 +160,20 @@
     applyThemeIcon(); toast('Motyw: ' + (next === 'dark' ? 'ciemny' : next === 'light' ? 'jasny' : 'automatyczny'));
   }
 
+  let lastSync = Date.now();
   async function refreshData() {
     const b = $('#btn-refresh'); b.classList.add('spinning');
-    try { await loadAll(); render(); toast('Odświeżono'); } catch (e) { fail(e); }
+    try { await loadAll(); render(); lastSync = Date.now(); toast('Odświeżono'); } catch (e) { fail(e); }
     finally { b.classList.remove('spinning'); }
     checkForUpdate();
+  }
+
+  // Telefon usypia kartę i zrywa połączenie na żywo — zmiany z tego czasu nie dochodzą.
+  // Po powrocie do aplikacji dociągamy dane po cichu, żeby nie trzeba było klikać ↻.
+  async function syncOnReturn() {
+    if (Date.now() - lastSync < 15000) return;
+    lastSync = Date.now();
+    try { await loadAll(); render(); } catch (e) { console.warn('sync po powrocie nie powiódł się', e); }
   }
 
   // -------------------------------------------------------------- aktualizacje aplikacji
@@ -185,7 +194,8 @@
     };
     checkForUpdate();
     setInterval(checkForUpdate, 60 * 1000);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { checkForUpdate(); syncOnReturn(); } });
+    window.addEventListener('online', syncOnReturn);
   }
 
   // -------------------------------------------------------------- data
